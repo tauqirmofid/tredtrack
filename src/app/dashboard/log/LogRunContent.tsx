@@ -51,11 +51,48 @@ function extractTreadmillDuration(text: string): string | null {
     };
   });
 
-  const candidates = [...colonCandidates, ...compactCandidates, ...spacedCandidates]
+  const streamMatches = [...normalized.matchAll(/\b(\d{5,})\b/g)];
+  const streamCandidates = streamMatches.flatMap((m) => {
+    const token = m[1];
+    const out: { raw: string; seconds: number }[] = [];
+
+    for (let len = 4; len >= 3; len--) {
+      for (let i = 0; i <= token.length - len; i++) {
+        const chunk = token.slice(i, i + len);
+        const secs = Number(chunk.slice(-2));
+        const mins = Number(chunk.slice(0, -2));
+        if (secs <= 59) {
+          out.push({
+            raw: `${mins}:${String(secs).padStart(2, "0")}`,
+            seconds: mins * 60 + secs,
+          });
+        }
+      }
+    }
+
+    return out;
+  });
+
+  const candidates = [...colonCandidates, ...compactCandidates, ...spacedCandidates, ...streamCandidates]
     .filter((c) => c.seconds >= 30 && c.seconds <= 6 * 3600);
 
   if (candidates.length === 0) return null;
-  candidates.sort((a, b) => b.seconds - a.seconds);
+
+  // Prefer realistic treadmill durations and explicit colon-like matches.
+  candidates.sort((a, b) => {
+    const score = (x: { raw: string; seconds: number }) => {
+      let s = 0;
+      if (x.raw.includes(":")) s += 2;
+      if (x.seconds >= 60 && x.seconds <= 7200) s += 2;
+      if (x.seconds >= 120 && x.seconds <= 5400) s += 2;
+      if (x.seconds <= 3600) s += 1;
+      return s;
+    };
+    const diff = score(b) - score(a);
+    if (diff !== 0) return diff;
+    return a.seconds - b.seconds;
+  });
+
   return candidates[0].raw;
 }
 
@@ -336,6 +373,7 @@ function CameraMode() {
   const [preview, setPreview] = useState<string | null>(null);
   const [ocr, setOcr] = useState<{ duration?: string; distance?: string } | null>(null);
   const [ocrError, setOcrError] = useState<string | null>(null);
+  const [ocrSample, setOcrSample] = useState<string | null>(null);
   const [ocrLoading, setOcrLoading] = useState(false);
   const [mins, setMins] = useState(0);
   const [secs, setSecs] = useState(0);
@@ -348,14 +386,16 @@ function CameraMode() {
     setOcrLoading(true);
     setOcr(null);
     setOcrError(null);
+    setOcrSample(null);
     try {
       const worker = await createWorker("eng");
       await worker.setParameters({
-        tessedit_char_whitelist: "0123456789:.",
+        tessedit_char_whitelist: "0123456789:. ",
         preserve_interword_spaces: "1",
       });
       const url = URL.createObjectURL(file);
       const { data: { text } } = await worker.recognize(url);
+      setOcrSample(text.replace(/\s+/g, " ").trim().slice(0, 80));
 
       let detectedDuration = extractTreadmillDuration(text);
       let durationSeconds = 0;
@@ -495,7 +535,7 @@ function CameraMode() {
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={preview} alt="Treadmill" className="w-full rounded-2xl object-cover max-h-64" />
           <button
-            onClick={() => { setPreview(null); setImage(null); setOcr(null); setOcrError(null); setMins(0); setSecs(0); }}
+            onClick={() => { setPreview(null); setImage(null); setOcr(null); setOcrError(null); setOcrSample(null); setMins(0); setSecs(0); }}
             className="absolute top-3 right-3 w-8 h-8 rounded-full flex items-center justify-center"
             style={{ background: "rgba(0,0,0,0.6)" }}>
             <X size={16} color="white" />
@@ -528,6 +568,11 @@ function CameraMode() {
           <p className="text-xs" style={{ color: "#8e8e93" }}>
             {ocrError ?? "Please retake with the treadmill timer centered and clearly lit."}
           </p>
+          {ocrSample && (
+            <p className="text-xs mt-1" style={{ color: "#8e8e93" }}>
+              OCR saw: {ocrSample}
+            </p>
+          )}
           {ocr?.distance && (
             <p className="text-xs mt-1" style={{ color: "#8e8e93" }}>
               Detected distance: {ocr.distance} km
