@@ -11,9 +11,9 @@ export async function GET() {
     orderBy: { date: "asc" },
   });
 
-  const totalDistance = runs.reduce((sum, r) => sum + r.distance, 0);
-  const totalDuration = runs.reduce((sum, r) => sum + r.duration, 0);
-  const totalCalories = runs.reduce((sum, r) => sum + (r.calories ?? 0), 0);
+  const totalDistance = runs.reduce((sum: number, r) => sum + r.distance, 0);
+  const totalDuration = runs.reduce((sum: number, r) => sum + r.duration, 0);
+  const totalCalories = runs.reduce((sum: number, r) => sum + (r.calories ?? 0), 0);
   const totalRuns = runs.length;
   const avgSpeed = totalDuration > 0 ? totalDistance / (totalDuration / 3600) : 0;
 
@@ -48,8 +48,8 @@ export async function GET() {
     });
     weekly.push({
       date: d.toLocaleDateString("en-US", { weekday: "short" }),
-      distance: Math.round(dayRuns.reduce((s, r) => s + r.distance, 0) * 100) / 100,
-      duration: dayRuns.reduce((s, r) => s + r.duration, 0),
+      distance: Math.round(dayRuns.reduce((s: number, r) => s + r.distance, 0) * 100) / 100,
+      duration: dayRuns.reduce((s: number, r) => s + r.duration, 0),
     });
   }
 

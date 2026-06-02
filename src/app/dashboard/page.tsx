@@ -18,9 +18,9 @@ export default async function DashboardPage() {
     take: 10,
   });
 
-  const totalDistance = recentRuns.reduce((s, r) => s + r.distance, 0);
-  const totalDuration = recentRuns.reduce((s, r) => s + r.duration, 0);
-  const totalCalories = recentRuns.reduce((s, r) => s + (r.calories ?? 0), 0);
+  const totalDistance = recentRuns.reduce((s: number, r) => s + r.distance, 0);
+  const totalDuration = recentRuns.reduce((s: number, r) => s + r.duration, 0);
+  const totalCalories = recentRuns.reduce((s: number, r) => s + (r.calories ?? 0), 0);
 
   // Today's run
   const today = new Date();
@@ -30,8 +30,8 @@ export default async function DashboardPage() {
     d.setHours(0, 0, 0, 0);
     return d.getTime() === today.getTime();
   });
-  const todayDistance = todayRuns.reduce((s, r) => s + r.distance, 0);
-  const todayDuration = todayRuns.reduce((s, r) => s + r.duration, 0);
+  const todayDistance = todayRuns.reduce((s: number, r) => s + r.distance, 0);
+  const todayDuration = todayRuns.reduce((s: number, r) => s + r.duration, 0);
 
   // Streak
   const allRuns = await prisma.run.findMany({
