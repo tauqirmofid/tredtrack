@@ -5,6 +5,8 @@ import { formatDuration, formatDistance } from "@/lib/utils";
 import { Camera, Pencil, Flame, Zap, Route, Clock } from "lucide-react";
 import { format } from "date-fns";
 
+type Run = { id: string; distance: number; duration: number; calories: number | null; date: Date; avgSpeed: number; maxSpeed: number | null; notes: string | null; source: string | null; imageUrl: string | null; userId: string };
+
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
@@ -12,38 +14,38 @@ export default async function DashboardPage() {
   if (!session?.user?.id) return null;
 
   const user = await prisma.user.findUnique({ where: { id: session.user.id } });
-  const recentRuns = await prisma.run.findMany({
+  const recentRuns: Run[] = await prisma.run.findMany({
     where: { userId: session.user.id },
     orderBy: { date: "desc" },
     take: 10,
   });
 
-  const totalDistance = recentRuns.reduce((s: number, r) => s + r.distance, 0);
-  const totalDuration = recentRuns.reduce((s: number, r) => s + r.duration, 0);
-  const totalCalories = recentRuns.reduce((s: number, r) => s + (r.calories ?? 0), 0);
+  const totalDistance = recentRuns.reduce((s: number, r: Run) => s + r.distance, 0);
+  const totalDuration = recentRuns.reduce((s: number, r: Run) => s + r.duration, 0);
+  const totalCalories = recentRuns.reduce((s: number, r: Run) => s + (r.calories ?? 0), 0);
 
   // Today's run
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const todayRuns = recentRuns.filter((r) => {
+  const todayRuns = recentRuns.filter((r: Run) => {
     const d = new Date(r.date);
     d.setHours(0, 0, 0, 0);
     return d.getTime() === today.getTime();
   });
-  const todayDistance = todayRuns.reduce((s: number, r) => s + r.distance, 0);
-  const todayDuration = todayRuns.reduce((s: number, r) => s + r.duration, 0);
+  const todayDistance = todayRuns.reduce((s: number, r: Run) => s + r.distance, 0);
+  const todayDuration = todayRuns.reduce((s: number, r: Run) => s + r.duration, 0);
 
   // Streak
-  const allRuns = await prisma.run.findMany({
+  const allRuns: { date: Date }[] = await prisma.run.findMany({
     where: { userId: session.user.id },
     orderBy: { date: "asc" },
     select: { date: true },
   });
-  const runDays = [...new Set(allRuns.map((r) => {
+  const runDays = [...new Set(allRuns.map((r: { date: Date }) => {
     const d = new Date(r.date);
     d.setHours(0, 0, 0, 0);
     return d.getTime();
-  }))].sort((a, b) => b - a);
+  }))].sort((a: number, b: number) => b - a);
   let streak = 0;
   let check = today.getTime();
   for (const day of runDays) {

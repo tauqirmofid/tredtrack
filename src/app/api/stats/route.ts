@@ -1,30 +1,37 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+
+type Run = {
+  distance: number;
+  duration: number;
+  calories: number | null;
+  date: Date;
+};
 
 export async function GET() {
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const runs = await prisma.run.findMany({
+  const runs: Run[] = await prisma.run.findMany({
     where: { userId: session.user.id },
     orderBy: { date: "asc" },
   });
 
-  const totalDistance = runs.reduce((sum: number, r) => sum + r.distance, 0);
-  const totalDuration = runs.reduce((sum: number, r) => sum + r.duration, 0);
-  const totalCalories = runs.reduce((sum: number, r) => sum + (r.calories ?? 0), 0);
+  const totalDistance = runs.reduce((sum: number, r: Run) => sum + r.distance, 0);
+  const totalDuration = runs.reduce((sum: number, r: Run) => sum + r.duration, 0);
+  const totalCalories = runs.reduce((sum: number, r: Run) => sum + (r.calories ?? 0), 0);
   const totalRuns = runs.length;
   const avgSpeed = totalDuration > 0 ? totalDistance / (totalDuration / 3600) : 0;
 
   // Streak calc
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const runDays = [...new Set(runs.map((r) => {
+  const runDays = [...new Set(runs.map((r: Run) => {
     const d = new Date(r.date);
     d.setHours(0, 0, 0, 0);
     return d.getTime();
-  }))].sort((a, b) => b - a);
+  }))].sort((a: number, b: number) => b - a);
 
   let streak = 0;
   let check = today.getTime();
@@ -41,15 +48,15 @@ export async function GET() {
     const d = new Date();
     d.setDate(d.getDate() - i);
     d.setHours(0, 0, 0, 0);
-    const dayRuns = runs.filter((r) => {
+    const dayRuns = runs.filter((r: Run) => {
       const rd = new Date(r.date);
       rd.setHours(0, 0, 0, 0);
       return rd.getTime() === d.getTime();
     });
     weekly.push({
       date: d.toLocaleDateString("en-US", { weekday: "short" }),
-      distance: Math.round(dayRuns.reduce((s: number, r) => s + r.distance, 0) * 100) / 100,
-      duration: dayRuns.reduce((s: number, r) => s + r.duration, 0),
+      distance: Math.round(dayRuns.reduce((s: number, r: Run) => s + r.distance, 0) * 100) / 100,
+      duration: dayRuns.reduce((s: number, r: Run) => s + r.duration, 0),
     });
   }
 
