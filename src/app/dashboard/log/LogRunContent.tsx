@@ -18,7 +18,7 @@ function extractTreadmillDuration(text: string): string | null {
     .replace(/S/g, "5")
     .replace(/,/g, ".");
 
-  const colonMatches = [...normalized.matchAll(/\b(\d{1,2})[:.](\d{2})(?:[:.](\d{2}))?\b/g)];
+  const colonMatches = [...normalized.matchAll(/(?<!\d)(\d{1,2})\s*[:.]\s*([0-5]\d)(?:\s*[:.]\s*([0-5]\d))?(?!\d)/g)];
 
   const colonCandidates = colonMatches.map((m) => {
     const first = Number(m[1]);
@@ -51,6 +51,16 @@ function extractTreadmillDuration(text: string): string | null {
     };
   });
 
+  const fuzzyMatches = [...normalized.matchAll(/(?<!\d)(\d{1,2})\D{0,3}([0-5]\d)(?!\d)/g)];
+  const fuzzyCandidates = fuzzyMatches.map((m) => {
+    const mins = Number(m[1]);
+    const secs = Number(m[2]);
+    return {
+      raw: `${mins}:${String(secs).padStart(2, "0")}`,
+      seconds: mins * 60 + secs,
+    };
+  });
+
   const streamMatches = [...normalized.matchAll(/\b(\d{5,})\b/g)];
   const streamCandidates = streamMatches.flatMap((m) => {
     const token = m[1];
@@ -73,7 +83,7 @@ function extractTreadmillDuration(text: string): string | null {
     return out;
   });
 
-  const candidates = [...colonCandidates, ...compactCandidates, ...spacedCandidates, ...streamCandidates]
+  const candidates = [...colonCandidates, ...compactCandidates, ...spacedCandidates, ...fuzzyCandidates, ...streamCandidates]
     .filter((c) => c.seconds >= 30 && c.seconds <= 6 * 3600);
 
   if (candidates.length === 0) return null;
@@ -205,6 +215,67 @@ async function createBottomStripImageUrl(file: File): Promise<string | null> {
         }
 
         ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob((blob) => {
+          URL.revokeObjectURL(originalUrl);
+          if (!blob) {
+            resolve(null);
+            return;
+          }
+          resolve(URL.createObjectURL(blob));
+        }, "image/png");
+      } catch {
+        URL.revokeObjectURL(originalUrl);
+        resolve(null);
+      }
+    };
+
+    img.onerror = () => {
+      URL.revokeObjectURL(originalUrl);
+      resolve(null);
+    };
+
+    img.src = originalUrl;
+  });
+}
+
+async function createBottomLeftTimeImageUrl(file: File): Promise<string | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    const originalUrl = URL.createObjectURL(file);
+
+    img.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        const cropX = Math.floor(img.width * 0.03);
+        const cropY = Math.floor(img.height * 0.52);
+        const cropW = Math.floor(img.width * 0.56);
+        const cropH = Math.floor(img.height * 0.42);
+
+        canvas.width = cropW * 3;
+        canvas.height = cropH * 3;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          URL.revokeObjectURL(originalUrl);
+          resolve(null);
+          return;
+        }
+
+        ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, canvas.width, canvas.height);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = imageData.data;
+
+        for (let i = 0; i < data.length; i += 4) {
+          const r = data[i];
+          const g = data[i + 1];
+          const b = data[i + 2];
+          const brightness = 0.299 * r + 0.587 * g + 0.114 * b;
+          const strong = brightness > 80 ? 255 : 0;
+          data[i] = strong;
+          data[i + 1] = strong;
+          data[i + 2] = strong;
+        }
+
+        ctx.putImageData(imageData, 0, 0);
         canvas.toBlob((blob) => {
           URL.revokeObjectURL(originalUrl);
           if (!blob) {
@@ -418,6 +489,22 @@ function CameraMode() {
           }
           if (!detectedDistance) {
             detectedDistance = extractTreadmillDistance(stripText, durationSeconds || undefined);
+          }
+        }
+      }
+
+      if (!detectedDuration) {
+        const timeUrl = await createBottomLeftTimeImageUrl(file);
+        if (timeUrl) {
+          const { data: { text: timeText } } = await worker.recognize(timeUrl);
+          URL.revokeObjectURL(timeUrl);
+          detectedDuration = extractTreadmillDuration(timeText);
+          if (detectedDuration) {
+            const d = parseOcrDuration(detectedDuration);
+            durationSeconds = durationToSeconds(d.mins, d.secs);
+          }
+          if (!detectedDistance) {
+            detectedDistance = extractTreadmillDistance(timeText, durationSeconds || undefined);
           }
         }
       }
