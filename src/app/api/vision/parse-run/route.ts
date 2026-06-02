@@ -71,10 +71,15 @@ Return ONLY a JSON object with no markdown or code fences:
   }
 
   const json = await response.json();
-  const rawText: string = json?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+
+  // Gemini 2.5 Flash uses "thinking" — text may be in a later part
+  const parts: Array<{ text?: string }> = json?.candidates?.[0]?.content?.parts ?? [];
+  const rawText: string = parts.map((p) => p.text ?? "").join("").trim();
+
+  console.log("[vision/parse-run] rawText:", rawText.slice(0, 300));
 
   // Strip markdown code fences if Gemini wraps the JSON
-  const cleaned = rawText.replace(/```[a-z]*\n?/gi, "").trim();
+  const cleaned = rawText.replace(/```[a-z]*\n?/gi, "").replace(/```/g, "").trim();
 
   let parsed: Partial<VisionResult> = {};
   try {
@@ -90,5 +95,5 @@ Return ONLY a JSON object with no markdown or code fences:
   const distance = typeof parsed.distance === "number" && Number.isFinite(parsed.distance) ? parsed.distance : null;
   const confidence = typeof parsed.confidence === "number" ? parsed.confidence : null;
 
-  return NextResponse.json({ duration, distance, confidence });
+  return NextResponse.json({ duration, distance, confidence, _raw: rawText.slice(0, 500) });
 }
