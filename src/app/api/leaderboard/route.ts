@@ -16,11 +16,11 @@ export async function GET() {
 
   const leaderboard = users
     .map((u: UserWithRuns) => {
-      const totalDistance = Math.round(u.runs.reduce((s, r) => s + r.distance, 0) * 100) / 100;
+      const totalDistance = Math.round(u.runs.reduce((s: number, r) => s + r.distance, 0) * 100) / 100;
       const totalRuns = u.runs.length;
       const avgSpeed =
         totalRuns > 0
-          ? Math.round((u.runs.reduce((s, r) => s + r.avgSpeed, 0) / totalRuns) * 10) / 10
+          ? Math.round((u.runs.reduce((s: number, r) => s + r.avgSpeed, 0) / totalRuns) * 10) / 10
           : 0;
       const lastRun = u.runs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
       return {
