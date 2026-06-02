@@ -13,6 +13,8 @@ function extractTreadmillDuration(text: string): string | null {
     .toUpperCase()
     .replace(/[OQ]/g, "0")
     .replace(/[IL]/g, "1")
+    .replace(/B/g, "8")
+    .replace(/Z/g, "2")
     .replace(/S/g, "5")
     .replace(/,/g, ".");
 
@@ -39,7 +41,17 @@ function extractTreadmillDuration(text: string): string | null {
     };
   });
 
-  const candidates = [...colonCandidates, ...compactCandidates]
+  const spacedMatches = [...normalized.matchAll(/\b(\d{1,2})\s+([0-5]\d)\b/g)];
+  const spacedCandidates = spacedMatches.map((m) => {
+    const mins = Number(m[1]);
+    const secs = Number(m[2]);
+    return {
+      raw: `${mins}:${String(secs).padStart(2, "0")}`,
+      seconds: mins * 60 + secs,
+    };
+  });
+
+  const candidates = [...colonCandidates, ...compactCandidates, ...spacedCandidates]
     .filter((c) => c.seconds >= 30 && c.seconds <= 6 * 3600);
 
   if (candidates.length === 0) return null;
@@ -110,6 +122,52 @@ async function createEnhancedImageUrl(file: File): Promise<string | null> {
         }
 
         ctx.putImageData(imageData, 0, 0);
+        canvas.toBlob((blob) => {
+          URL.revokeObjectURL(originalUrl);
+          if (!blob) {
+            resolve(null);
+            return;
+          }
+          resolve(URL.createObjectURL(blob));
+        }, "image/png");
+      } catch {
+        URL.revokeObjectURL(originalUrl);
+        resolve(null);
+      }
+    };
+
+    img.onerror = () => {
+      URL.revokeObjectURL(originalUrl);
+      resolve(null);
+    };
+
+    img.src = originalUrl;
+  });
+}
+
+async function createBottomStripImageUrl(file: File): Promise<string | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    const originalUrl = URL.createObjectURL(file);
+
+    img.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        const cropX = Math.floor(img.width * 0.08);
+        const cropY = Math.floor(img.height * 0.52);
+        const cropW = Math.floor(img.width * 0.84);
+        const cropH = Math.floor(img.height * 0.42);
+
+        canvas.width = cropW * 2;
+        canvas.height = cropH * 2;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          URL.revokeObjectURL(originalUrl);
+          resolve(null);
+          return;
+        }
+
+        ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, canvas.width, canvas.height);
         canvas.toBlob((blob) => {
           URL.revokeObjectURL(originalUrl);
           if (!blob) {
@@ -307,6 +365,22 @@ function CameraMode() {
       }
 
       let detectedDistance = extractTreadmillDistance(text, durationSeconds || undefined);
+
+      if (!detectedDuration) {
+        const stripUrl = await createBottomStripImageUrl(file);
+        if (stripUrl) {
+          const { data: { text: stripText } } = await worker.recognize(stripUrl);
+          URL.revokeObjectURL(stripUrl);
+          detectedDuration = extractTreadmillDuration(stripText);
+          if (detectedDuration) {
+            const d = parseOcrDuration(detectedDuration);
+            durationSeconds = durationToSeconds(d.mins, d.secs);
+          }
+          if (!detectedDistance) {
+            detectedDistance = extractTreadmillDistance(stripText, durationSeconds || undefined);
+          }
+        }
+      }
 
       if (!detectedDuration) {
         const enhancedUrl = await createEnhancedImageUrl(file);
