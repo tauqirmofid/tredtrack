@@ -58,7 +58,7 @@ Return ONLY a JSON object with no markdown or code fences:
           { inline_data: { mime_type: mime, data: base64 } },
         ],
       }],
-      generationConfig: { temperature: 0, maxOutputTokens: 200 },
+      generationConfig: { temperature: 0, maxOutputTokens: 1024 },
     }),
   });
 
@@ -95,5 +95,5 @@ Return ONLY a JSON object with no markdown or code fences:
   const distance = typeof parsed.distance === "number" && Number.isFinite(parsed.distance) ? parsed.distance : null;
   const confidence = typeof parsed.confidence === "number" ? parsed.confidence : null;
 
-  return NextResponse.json({ duration, distance, confidence, _raw: rawText.slice(0, 500) });
+  return NextResponse.json({ duration, distance, confidence });
 }
