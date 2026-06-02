@@ -2,6 +2,18 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
+type RunEntry = { distance: number; duration: number; avgSpeed: number; date: Date };
+type LeaderboardEntry = {
+  id: string;
+  name: string | null;
+  username: string;
+  totalDistance: number;
+  totalRuns: number;
+  avgSpeed: number;
+  lastRunDate: Date | null;
+  isCurrentUser: boolean;
+};
+
 export async function GET() {
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -12,33 +24,30 @@ export async function GET() {
     },
   });
 
-  type RunEntry = { distance: number; duration: number; avgSpeed: number; date: Date };
-  type UserWithRuns = (typeof users)[number];
+  const leaderboard: LeaderboardEntry[] = [];
 
-  const leaderboard = users
-    .map((u: UserWithRuns) => {
-      const runs = u.runs as RunEntry[];
-      const totalDistance = Math.round(runs.reduce((s: number, r: RunEntry) => s + r.distance, 0) * 100) / 100;
-      const totalRuns = runs.length;
-      const avgSpeed =
-        totalRuns > 0
-          ? Math.round((runs.reduce((s: number, r: RunEntry) => s + r.avgSpeed, 0) / totalRuns) * 10) / 10
-          : 0;
-      const lastRun = [...runs].sort((a: RunEntry, b: RunEntry) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
-      return {
-        id: u.id,
-        name: u.name,
-        username: u.username,
-        totalDistance,
-        totalRuns,
-        avgSpeed,
-        lastRunDate: lastRun?.date ?? null,
-        isCurrentUser: u.id === session?.user?.id,
-      };
-    })
-    .filter((u) => u.totalRuns > 0)
-    .sort((a, b) => b.totalDistance - a.totalDistance)
-    .slice(0, 100);
+  for (const u of users) {
+    const runs = u.runs as RunEntry[];
+    const totalRuns = runs.length;
+    if (totalRuns === 0) continue;
 
-  return NextResponse.json(leaderboard);
+    const totalDistance = Math.round(runs.reduce((s: number, r: RunEntry) => s + r.distance, 0) * 100) / 100;
+    const avgSpeed = Math.round((runs.reduce((s: number, r: RunEntry) => s + r.avgSpeed, 0) / totalRuns) * 10) / 10;
+    const lastRun = [...runs].sort((a: RunEntry, b: RunEntry) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+
+    leaderboard.push({
+      id: u.id,
+      name: u.name,
+      username: u.username,
+      totalDistance,
+      totalRuns,
+      avgSpeed,
+      lastRunDate: lastRun?.date ?? null,
+      isCurrentUser: u.id === session?.user?.id,
+    });
+  }
+
+  leaderboard.sort((a: LeaderboardEntry, b: LeaderboardEntry) => b.totalDistance - a.totalDistance);
+
+  return NextResponse.json(leaderboard.slice(0, 100));
 }
