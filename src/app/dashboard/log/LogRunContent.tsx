@@ -310,6 +310,26 @@ function durationToSeconds(mins: number, secs: number) {
   return mins * 60 + secs;
 }
 
+async function parseWithVisionAI(file: File): Promise<{ duration?: string; distance?: string } | null> {
+  try {
+    const fd = new FormData();
+    fd.append("image", file);
+    const res = await fetch("/api/vision/parse-run", {
+      method: "POST",
+      body: fd,
+    });
+    if (!res.ok) return null;
+    const data = await res.json() as { duration?: string | null; distance?: number | null; confidence?: number | null };
+    if (!data.duration && !data.distance) return null;
+    return {
+      duration: data.duration ?? undefined,
+      distance: typeof data.distance === "number" ? data.distance.toFixed(2) : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
 /** Reusable duration picker: separate mins + secs boxes */
 function DurationPicker({
   mins, secs, onChange,
@@ -522,6 +542,18 @@ function CameraMode() {
           if (!detectedDistance) {
             detectedDistance = extractTreadmillDistance(enhancedText, durationSeconds || undefined);
           }
+        }
+      }
+
+      if (!detectedDuration) {
+        const aiParsed = await parseWithVisionAI(file);
+        if (aiParsed?.duration) {
+          detectedDuration = aiParsed.duration;
+          const d = parseOcrDuration(detectedDuration);
+          durationSeconds = durationToSeconds(d.mins, d.secs);
+        }
+        if (!detectedDistance && aiParsed?.distance) {
+          detectedDistance = aiParsed.distance;
         }
       }
 
