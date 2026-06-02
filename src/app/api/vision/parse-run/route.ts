@@ -20,7 +20,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     return NextResponse.json({ error: "Vision AI key not configured" }, { status: 503 });
   }
@@ -34,40 +34,31 @@ export async function POST(req: Request) {
 
   const buf = Buffer.from(await image.arrayBuffer());
   const mime = image.type || "image/jpeg";
-  const dataUrl = `data:${mime};base64,${buf.toString("base64")}`;
+  const base64 = buf.toString("base64");
 
-  const model = process.env.OPENAI_VISION_MODEL ?? "gpt-4o-mini";
+  const model = process.env.GEMINI_MODEL ?? "gemini-1.5-flash";
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+  const prompt = `You are reading a treadmill LCD display photo.
+Look carefully at ALL the numbers on the screen.
+Identify which number is the ELAPSED TIME (format like M:SS or MM:SS) and which is the DISTANCE (in km, usually a decimal like 3.50).
+DO NOT confuse speed (e.g. 8.0 km/h) with time or distance.
+Elapsed time is typically labeled TIME or shown in M:SS format with a colon separator.
+Distance is typically labeled DIST or KM and is a small decimal number.
+Return ONLY a JSON object with no markdown or code fences:
+{"duration": "M:SS or null", "distance": number_or_null, "confidence": 0_to_1}`;
+
+  const response = await fetch(url, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      model,
-      response_format: { type: "json_object" },
-      temperature: 0,
-      messages: [
-        {
-          role: "system",
-          content:
-            "Extract treadmill values from display photos. Return strict JSON: {\"duration\": \"M:SS\" | null, \"distance\": number | null, \"confidence\": number(0..1)}. If uncertain, set null.",
-        },
-        {
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: "Read treadmill elapsed time and distance in km. Ignore speed and other metrics.",
-            },
-            {
-              type: "image_url",
-              image_url: { url: dataUrl },
-            },
-          ],
-        },
-      ],
+      contents: [{
+        parts: [
+          { text: prompt },
+          { inline_data: { mime_type: mime, data: base64 } },
+        ],
+      }],
+      generationConfig: { temperature: 0, maxOutputTokens: 200 },
     }),
   });
 
@@ -77,16 +68,19 @@ export async function POST(req: Request) {
   }
 
   const json = await response.json();
-  const content = json?.choices?.[0]?.message?.content;
-  if (!content) {
-    return NextResponse.json({ duration: null, distance: null, confidence: null });
-  }
+  const rawText: string = json?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+
+  // Strip markdown code fences if Gemini wraps the JSON
+  const cleaned = rawText.replace(/```[a-z]*\n?/gi, "").trim();
 
   let parsed: Partial<VisionResult> = {};
   try {
-    parsed = JSON.parse(content) as Partial<VisionResult>;
+    parsed = JSON.parse(cleaned) as Partial<VisionResult>;
   } catch {
-    return NextResponse.json({ duration: null, distance: null, confidence: null });
+    const match = cleaned.match(/\{[\s\S]*\}/);
+    if (match) {
+      try { parsed = JSON.parse(match[0]) as Partial<VisionResult>; } catch { /* ignore */ }
+    }
   }
 
   const duration = normalizeDuration(typeof parsed.duration === "string" ? parsed.duration : null);

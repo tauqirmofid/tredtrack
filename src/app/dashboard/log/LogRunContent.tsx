@@ -479,6 +479,10 @@ function CameraMode() {
     setOcrError(null);
     setOcrSample(null);
     try {
+      // Start Gemini Vision AI in parallel — it understands labels (TIME vs SPEED vs DIST)
+      // whereas Tesseract just sees raw characters with no context
+      const aiPromise = parseWithVisionAI(file);
+
       const worker = await createWorker("eng");
       await worker.setParameters({
         tessedit_char_whitelist: "0123456789:. ",
@@ -547,6 +551,17 @@ function CameraMode() {
 
       await worker.terminate();
       URL.revokeObjectURL(url);
+
+      // Gemini result always wins — it knows which number is TIME vs SPEED vs DIST
+      const aiParsed = await aiPromise;
+      if (aiParsed?.duration) {
+        detectedDuration = aiParsed.duration;
+        const d = parseOcrDuration(detectedDuration);
+        durationSeconds = durationToSeconds(d.mins, d.secs);
+      }
+      if (aiParsed?.distance) {
+        detectedDistance = aiParsed.distance;
+      }
 
       if (detectedDuration || detectedDistance) {
         setOcr({
