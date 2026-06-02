@@ -12,8 +12,10 @@ export async function GET() {
     },
   });
 
+  type UserWithRuns = (typeof users)[number];
+
   const leaderboard = users
-    .map((u) => {
+    .map((u: UserWithRuns) => {
       const totalDistance = Math.round(u.runs.reduce((s, r) => s + r.distance, 0) * 100) / 100;
       const totalRuns = u.runs.length;
       const avgSpeed =
