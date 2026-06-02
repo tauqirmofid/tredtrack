@@ -1,26 +1,118 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #0a0a0f;
+  --foreground: #f5f5f7;
+  --card: #1c1c1e;
+  --card-border: #2c2c2e;
+  --accent: #30d158;
+  --accent-blue: #0a84ff;
+  --accent-orange: #ff9f0a;
+  --accent-red: #ff453a;
+  --muted: #8e8e93;
+  --surface: #2c2c2e;
+  --font-inter: 'Inter', sans-serif;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  scroll-behavior: smooth;
 }
 
 body {
-  background: var(--background);
+  background-color: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-inter), -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
+  font-feature-settings: 'kern' 1, 'liga' 1;
+  -webkit-font-smoothing: antialiased;
 }
+
+.glass {
+  background: rgba(28, 28, 30, 0.8);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: 16px;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #000;
+  font-weight: 600;
+  border-radius: 14px;
+  padding: 14px 24px;
+  transition: opacity 0.15s, transform 0.1s;
+  width: 100%;
+  font-size: 16px;
+}
+
+.btn-primary:active {
+  transform: scale(0.97);
+  opacity: 0.85;
+}
+
+.btn-secondary {
+  background: var(--surface);
+  color: var(--foreground);
+  font-weight: 500;
+  border-radius: 14px;
+  padding: 14px 24px;
+  transition: opacity 0.15s, transform 0.1s;
+  width: 100%;
+  font-size: 16px;
+  border: 1px solid var(--card-border);
+}
+
+.btn-secondary:active {
+  transform: scale(0.97);
+  opacity: 0.85;
+}
+
+.input-field {
+  background: var(--surface);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  color: var(--foreground);
+  font-size: 16px;
+  width: 100%;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.input-field:focus {
+  border-color: var(--accent);
+}
+
+.input-field::placeholder {
+  color: var(--muted);
+}
+
+@keyframes pulse-green {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(48, 209, 88, 0.4); }
+  50% { box-shadow: 0 0 0 12px rgba(48, 209, 88, 0); }
+}
+
+.pulse-green {
+  animation: pulse-green 2s infinite;
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in-up {
+  animation: fadeInUp 0.4s ease-out both;
+}
+
+::-webkit-scrollbar { width: 0; }

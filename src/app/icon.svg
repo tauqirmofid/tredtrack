@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <!-- Background circle -->
+  <rect width="32" height="32" rx="8" fill="#0a0a0a"/>
+  
+  <!-- Treadmill belt -->
+  <rect x="4" y="22" width="24" height="3" rx="1.5" fill="#30d158" opacity="0.25"/>
+  <rect x="4" y="22" width="10" height="3" rx="1.5" fill="#30d158" opacity="0.6"/>
+  
+  <!-- Treadmill legs -->
+  <line x1="6" y1="25" x2="5" y2="28" stroke="#30d158" stroke-width="1.5" stroke-linecap="round" opacity="0.5"/>
+  <line x1="26" y1="25" x2="27" y2="28" stroke="#30d158" stroke-width="1.5" stroke-linecap="round" opacity="0.5"/>
+  
+  <!-- Runner head -->
+  <circle cx="19" cy="8" r="2.5" fill="#30d158"/>
+  
+  <!-- Runner body + limbs (mid-stride pose) -->
+  <!-- Torso -->
+  <line x1="19" y1="10.5" x2="17" y2="16" stroke="#30d158" stroke-width="1.8" stroke-linecap="round"/>
+  <!-- Forward arm -->
+  <line x1="18.5" y1="12" x2="15" y2="14" stroke="#30d158" stroke-width="1.5" stroke-linecap="round"/>
+  <!-- Back arm -->
+  <line x1="18.5" y1="12" x2="21" y2="15" stroke="#30d158" stroke-width="1.5" stroke-linecap="round" opacity="0.6"/>
+  <!-- Forward leg (stepping) -->
+  <line x1="17" y1="16" x2="14" y2="20" stroke="#30d158" stroke-width="1.8" stroke-linecap="round"/>
+  <line x1="14" y1="20" x2="12" y2="22" stroke="#30d158" stroke-width="1.8" stroke-linecap="round"/>
+  <!-- Back leg (pushing off) -->
+  <line x1="17" y1="16" x2="20" y2="20" stroke="#30d158" stroke-width="1.8" stroke-linecap="round" opacity="0.7"/>
+  <line x1="20" y1="20" x2="22" y2="21.5" stroke="#30d158" stroke-width="1.8" stroke-linecap="round" opacity="0.7"/>
+  
+  <!-- Speed lines -->
+  <line x1="7" y1="13" x2="11" y2="13" stroke="#30d158" stroke-width="1" stroke-linecap="round" opacity="0.5"/>
+  <line x1="8" y1="16" x2="12" y2="16" stroke="#30d158" stroke-width="1" stroke-linecap="round" opacity="0.35"/>
+</svg>
