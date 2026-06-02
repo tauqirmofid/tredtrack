@@ -1,12 +1,73 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Camera, Upload, Loader2, CheckCircle, ChevronLeft, X, Lightbulb } from "lucide-react";
-import { parseDuration, calcAvgSpeed } from "@/lib/utils";
+import { calcAvgSpeed } from "@/lib/utils";
 import { createWorker } from "tesseract.js";
 
 type Mode = "choose" | "camera" | "manual";
+
+/** Convert MM:SS string or plain digits to total seconds */
+function parseOcrDuration(str: string): { mins: number; secs: number } {
+  const parts = str.split(":").map(Number);
+  if (parts.length >= 2) return { mins: parts[parts.length - 2], secs: parts[parts.length - 1] };
+  return { mins: 0, secs: 0 };
+}
+
+function durationToSeconds(mins: number, secs: number) {
+  return mins * 60 + secs;
+}
+
+/** Reusable duration picker: separate mins + secs boxes */
+function DurationPicker({
+  mins, secs, onChange,
+}: {
+  mins: number; secs: number;
+  onChange: (mins: number, secs: number) => void;
+}) {
+  return (
+    <div>
+      <label className="text-xs font-semibold uppercase tracking-wider mb-2 block" style={{ color: "#8e8e93" }}>
+        Duration *
+      </label>
+      <div className="flex items-center gap-2">
+        <div className="flex-1 flex flex-col items-center">
+          <input
+            type="number" min={0} max={999}
+            className="input-field text-center text-2xl font-bold"
+            style={{ color: "#f5f5f7" }}
+            value={mins === 0 ? "" : mins}
+            placeholder="0"
+            onChange={(e) => onChange(Math.max(0, parseInt(e.target.value) || 0), secs)}
+          />
+          <span className="text-xs mt-1 font-medium" style={{ color: "#8e8e93" }}>mins</span>
+        </div>
+        <span className="text-3xl font-bold pb-4" style={{ color: "#8e8e93" }}>:</span>
+        <div className="flex-1 flex flex-col items-center">
+          <input
+            type="number" min={0} max={59}
+            className="input-field text-center text-2xl font-bold"
+            style={{ color: "#f5f5f7" }}
+            value={secs === 0 ? "" : secs}
+            placeholder="00"
+            onChange={(e) => {
+              let s = parseInt(e.target.value) || 0;
+              if (s > 59) s = 59;
+              onChange(mins, Math.max(0, s));
+            }}
+          />
+          <span className="text-xs mt-1 font-medium" style={{ color: "#8e8e93" }}>secs</span>
+        </div>
+      </div>
+      {(mins > 0 || secs > 0) && (
+        <p className="text-xs mt-1" style={{ color: "#30d158" }}>
+          = {mins}m {secs}s total
+        </p>
+      )}
+    </div>
+  );
+}
 
 export default function LogRunPage() {
   const router = useRouter();
@@ -64,13 +125,10 @@ function ModeChooser({ onSelect }: { onSelect: (m: Mode) => void }) {
         </div>
         <div>
           <p className="text-base font-bold mb-1" style={{ color: "#f5f5f7" }}>✍️ Manual Entry</p>
-          <p className="text-sm" style={{ color: "#8e8e93" }}>
-            Enter time and distance yourself
-          </p>
+          <p className="text-sm" style={{ color: "#8e8e93" }}>Enter time and distance yourself</p>
         </div>
       </button>
 
-      {/* Tips */}
       <div className="card p-4 mt-2" style={{ background: "rgba(255,159,10,0.08)", border: "1px solid rgba(255,159,10,0.2)" }}>
         <div className="flex items-start gap-3">
           <Lightbulb size={18} style={{ color: "#ff9f0a", flexShrink: 0, marginTop: 2 }} />
@@ -79,7 +137,7 @@ function ModeChooser({ onSelect }: { onSelect: (m: Mode) => void }) {
             <ul className="text-xs space-y-1" style={{ color: "#8e8e93" }}>
               <li>• Hold phone steady, 20–30 cm from display</li>
               <li>• Ensure display is fully lit and not glaring</li>
-              <li>• Make sure time (MM:SS) and distance are visible</li>
+              <li>• Make sure time and distance are visible</li>
               <li>• Capture right after finishing your run</li>
             </ul>
           </div>
@@ -95,7 +153,9 @@ function CameraMode() {
   const [preview, setPreview] = useState<string | null>(null);
   const [ocr, setOcr] = useState<{ duration?: string; distance?: string } | null>(null);
   const [ocrLoading, setOcrLoading] = useState(false);
-  const [form, setForm] = useState({ duration: "", distance: "", notes: "", date: new Date().toISOString().slice(0, 16) });
+  const [mins, setMins] = useState(0);
+  const [secs, setSecs] = useState(0);
+  const [form, setForm] = useState({ distance: "", notes: "", date: new Date().toISOString().slice(0, 16) });
   const [saving, setSaving] = useState(false);
   const [done, setDone] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -108,33 +168,25 @@ function CameraMode() {
       const { data: { text } } = await worker.recognize(url);
       await worker.terminate();
 
-      // Parse time pattern: digits:digits:digits or digits:digits
       const timeMatch = text.match(/(\d{1,2}:\d{2}(?::\d{2})?)/g);
-      // Parse distance: a number like 3.50, 0.32 etc
       const distMatch = text.match(/(\d+\.\d{1,2})/g);
 
       const extracted: { duration?: string; distance?: string } = {};
       if (timeMatch && timeMatch.length > 0) {
-        // Prefer longest match
-        extracted.duration = timeMatch.sort((a, b) => b.length - a.length)[0];
+        extracted.duration = timeMatch.sort((a: string, b: string) => b.length - a.length)[0];
       }
       if (distMatch && distMatch.length > 0) {
-        // Filter plausible distances (0.1 – 99)
-        const dists = distMatch.map(Number).filter((n) => n > 0.05 && n < 100);
-        if (dists.length > 0) {
-          extracted.distance = String(Math.min(...dists));
-        }
+        const dists = distMatch.map(Number).filter((n: number) => n > 0.05 && n < 100);
+        if (dists.length > 0) extracted.distance = String(Math.min(...dists));
       }
 
       setOcr(extracted);
-      setForm((f) => ({
-        ...f,
-        duration: extracted.duration ?? f.duration,
-        distance: extracted.distance ?? f.distance,
-      }));
-    } catch {
-      // silently ignore OCR errors
-    }
+      if (extracted.duration) {
+        const { mins: m, secs: s } = parseOcrDuration(extracted.duration);
+        setMins(m); setSecs(s);
+      }
+      if (extracted.distance) setForm((f) => ({ ...f, distance: extracted.distance! }));
+    } catch { /* silently ignore */ }
     setOcrLoading(false);
   }, []);
 
@@ -147,7 +199,8 @@ function CameraMode() {
   }
 
   async function handleSave() {
-    if (!form.duration || !form.distance) return;
+    const totalSecs = durationToSeconds(mins, secs);
+    if (totalSecs <= 0 || !form.distance) return;
     setSaving(true);
 
     let imageUrl: string | null = null;
@@ -159,12 +212,11 @@ function CameraMode() {
       imageUrl = data.imageUrl;
     }
 
-    const durationSec = parseDuration(form.duration);
     await fetch("/api/runs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        duration: durationSec,
+        duration: totalSecs,
         distance: parseFloat(form.distance),
         date: form.date,
         notes: form.notes,
@@ -186,9 +238,11 @@ function CameraMode() {
     );
   }
 
+  const totalSecs = durationToSeconds(mins, secs);
+  const canSave = totalSecs > 0 && !!form.distance;
+
   return (
     <div className="flex flex-col gap-4 fade-in-up">
-      {/* Image picker */}
       {!preview ? (
         <button
           onClick={() => fileRef.current?.click()}
@@ -207,7 +261,7 @@ function CameraMode() {
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={preview} alt="Treadmill" className="w-full rounded-2xl object-cover max-h-64" />
           <button
-            onClick={() => { setPreview(null); setImage(null); setOcr(null); }}
+            onClick={() => { setPreview(null); setImage(null); setOcr(null); setMins(0); setSecs(0); }}
             className="absolute top-3 right-3 w-8 h-8 rounded-full flex items-center justify-center"
             style={{ background: "rgba(0,0,0,0.6)" }}>
             <X size={16} color="white" />
@@ -226,55 +280,30 @@ function CameraMode() {
 
       {ocr && !ocrLoading && (
         <div className="card p-3" style={{ background: "rgba(48,209,88,0.08)", border: "1px solid rgba(48,209,88,0.2)" }}>
-          <p className="text-xs font-semibold mb-1" style={{ color: "#30d158" }}>✓ Auto-detected</p>
+          <p className="text-xs font-semibold mb-1" style={{ color: "#30d158" }}>✓ Auto-detected — verify below</p>
           <p className="text-xs" style={{ color: "#8e8e93" }}>
             {ocr.duration && `Time: ${ocr.duration}`}{ocr.duration && ocr.distance && " · "}
             {ocr.distance && `Distance: ${ocr.distance} km`}
           </p>
-          <p className="text-xs mt-1" style={{ color: "#8e8e93" }}>Please verify the values below before saving</p>
         </div>
       )}
 
-      {/* Form */}
       <div className="card p-5 flex flex-col gap-4">
+        <DurationPicker mins={mins} secs={secs} onChange={(m, s) => { setMins(m); setSecs(s); }} />
         <div>
-          <label className="text-xs font-semibold uppercase tracking-wider mb-2 block" style={{ color: "#8e8e93" }}>
-            Duration (MM:SS or HH:MM:SS) *
-          </label>
-          <input
-            className="input-field"
-            placeholder="30:00"
-            value={form.duration}
-            onChange={(e) => setForm({ ...form, duration: e.target.value })}
-          />
+          <label className="text-xs font-semibold uppercase tracking-wider mb-2 block" style={{ color: "#8e8e93" }}>Distance (km) *</label>
+          <input className="input-field" placeholder="3.50" type="number" step="0.01" min="0"
+            value={form.distance} onChange={(e) => setForm({ ...form, distance: e.target.value })} />
         </div>
-        <div>
-          <label className="text-xs font-semibold uppercase tracking-wider mb-2 block" style={{ color: "#8e8e93" }}>
-            Distance (km) *
-          </label>
-          <input
-            className="input-field"
-            placeholder="3.50"
-            type="number"
-            step="0.01"
-            min="0"
-            value={form.distance}
-            onChange={(e) => setForm({ ...form, distance: e.target.value })}
-          />
-        </div>
-        {form.duration && form.distance && (
+        {canSave && (
           <div className="px-3 py-2 rounded-xl text-sm font-medium" style={{ background: "rgba(48,209,88,0.1)", color: "#30d158" }}>
-            Avg Speed: {calcAvgSpeed(parseFloat(form.distance || "0"), parseDuration(form.duration))} km/h
+            Avg Speed: {calcAvgSpeed(parseFloat(form.distance || "0"), totalSecs)} km/h
           </div>
         )}
         <div>
           <label className="text-xs font-semibold uppercase tracking-wider mb-2 block" style={{ color: "#8e8e93" }}>Date & Time</label>
-          <input
-            className="input-field"
-            type="datetime-local"
-            value={form.date}
-            onChange={(e) => setForm({ ...form, date: e.target.value })}
-          />
+          <input className="input-field" type="datetime-local" value={form.date}
+            onChange={(e) => setForm({ ...form, date: e.target.value })} />
         </div>
         <div>
           <label className="text-xs font-semibold uppercase tracking-wider mb-2 block" style={{ color: "#8e8e93" }}>Notes (optional)</label>
@@ -283,10 +312,7 @@ function CameraMode() {
         </div>
       </div>
 
-      <button
-        className="btn-primary"
-        onClick={handleSave}
-        disabled={saving || !form.duration || !form.distance}>
+      <button className="btn-primary" onClick={handleSave} disabled={saving || !canSave}>
         {saving ? <span className="flex items-center justify-center gap-2"><Loader2 size={16} className="animate-spin" />Saving…</span> : "Save Run"}
       </button>
     </div>
@@ -295,19 +321,21 @@ function CameraMode() {
 
 function ManualMode() {
   const router = useRouter();
-  const [form, setForm] = useState({ duration: "", distance: "", notes: "", date: new Date().toISOString().slice(0, 16) });
+  const [mins, setMins] = useState(0);
+  const [secs, setSecs] = useState(0);
+  const [form, setForm] = useState({ distance: "", notes: "", date: new Date().toISOString().slice(0, 16) });
   const [saving, setSaving] = useState(false);
   const [done, setDone] = useState(false);
 
   async function handleSave() {
-    if (!form.duration || !form.distance) return;
+    const totalSecs = durationToSeconds(mins, secs);
+    if (totalSecs <= 0 || !form.distance) return;
     setSaving(true);
-    const durationSec = parseDuration(form.duration);
     await fetch("/api/runs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        duration: durationSec,
+        duration: totalSecs,
         distance: parseFloat(form.distance),
         date: form.date,
         notes: form.notes,
@@ -328,22 +356,21 @@ function ManualMode() {
     );
   }
 
+  const totalSecs = durationToSeconds(mins, secs);
+  const canSave = totalSecs > 0 && !!form.distance;
+
   return (
     <div className="flex flex-col gap-4 fade-in-up">
       <div className="card p-5 flex flex-col gap-4">
-        <div>
-          <label className="text-xs font-semibold uppercase tracking-wider mb-2 block" style={{ color: "#8e8e93" }}>Duration (MM:SS) *</label>
-          <input className="input-field" placeholder="30:00" value={form.duration}
-            onChange={(e) => setForm({ ...form, duration: e.target.value })} />
-        </div>
+        <DurationPicker mins={mins} secs={secs} onChange={(m, s) => { setMins(m); setSecs(s); }} />
         <div>
           <label className="text-xs font-semibold uppercase tracking-wider mb-2 block" style={{ color: "#8e8e93" }}>Distance (km) *</label>
           <input className="input-field" placeholder="3.50" type="number" step="0.01" min="0"
             value={form.distance} onChange={(e) => setForm({ ...form, distance: e.target.value })} />
         </div>
-        {form.duration && form.distance && (
+        {canSave && (
           <div className="px-3 py-2 rounded-xl text-sm font-medium" style={{ background: "rgba(48,209,88,0.1)", color: "#30d158" }}>
-            Avg Speed: {calcAvgSpeed(parseFloat(form.distance || "0"), parseDuration(form.duration))} km/h
+            Avg Speed: {calcAvgSpeed(parseFloat(form.distance || "0"), totalSecs)} km/h
           </div>
         )}
         <div>
@@ -358,7 +385,7 @@ function ManualMode() {
         </div>
       </div>
 
-      <button className="btn-primary" onClick={handleSave} disabled={saving || !form.duration || !form.distance}>
+      <button className="btn-primary" onClick={handleSave} disabled={saving || !canSave}>
         {saving ? <span className="flex items-center justify-center gap-2"><Loader2 size={16} className="animate-spin" />Saving…</span> : "Save Run"}
       </button>
     </div>
