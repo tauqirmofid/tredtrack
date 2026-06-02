@@ -64,7 +64,10 @@ Return ONLY a JSON object with no markdown or code fences:
 
   if (!response.ok) {
     const text = await response.text();
-    return NextResponse.json({ error: "Vision request failed", detail: text }, { status: 502 });
+    // Log the real error for debugging, but return 200 with nulls so the
+    // client can still use whatever OCR detected instead of hard-failing.
+    console.error("[vision/parse-run] Gemini error:", response.status, text);
+    return NextResponse.json({ duration: null, distance: null, confidence: null, _error: text });
   }
 
   const json = await response.json();
