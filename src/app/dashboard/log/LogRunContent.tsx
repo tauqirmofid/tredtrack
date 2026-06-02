@@ -9,19 +9,37 @@ import { createWorker } from "tesseract.js";
 type Mode = "choose" | "camera" | "manual";
 
 function extractTreadmillDuration(text: string): string | null {
-  const matches = [...text.matchAll(/\b(\d{1,2}):([0-5]\d)(?::([0-5]\d))?\b/g)];
-  if (matches.length === 0) return null;
+  const normalized = text
+    .toUpperCase()
+    .replace(/[OQ]/g, "0")
+    .replace(/[IL]/g, "1")
+    .replace(/S/g, "5")
+    .replace(/,/g, ".");
 
-  const candidates = matches
-    .map((m) => {
-      const hOrM = Number(m[1]);
-      const mmOrSs = Number(m[2]);
-      const maybeSs = m[3] ? Number(m[3]) : undefined;
-      const seconds = maybeSs !== undefined
-        ? hOrM * 3600 + mmOrSs * 60 + maybeSs
-        : hOrM * 60 + mmOrSs;
-      return { raw: m[0], seconds };
-    })
+  const colonMatches = [...normalized.matchAll(/\b(\d{1,2})[:.](\d{2})(?:[:.](\d{2}))?\b/g)];
+
+  const colonCandidates = colonMatches.map((m) => {
+    const first = Number(m[1]);
+    const second = Number(m[2]);
+    const third = m[3] ? Number(m[3]) : undefined;
+    const seconds = third !== undefined
+      ? first * 3600 + second * 60 + third
+      : first * 60 + second;
+    return { raw: m[0].replace(".", ":"), seconds };
+  });
+
+  const compactMatches = [...normalized.matchAll(/\b(\d{3,4})\b/g)];
+  const compactCandidates = compactMatches.map((m) => {
+    const raw = m[1];
+    const secs = Number(raw.slice(-2));
+    const mins = Number(raw.slice(0, -2));
+    return {
+      raw: `${mins}:${String(secs).padStart(2, "0")}`,
+      seconds: mins * 60 + secs,
+    };
+  });
+
+  const candidates = [...colonCandidates, ...compactCandidates]
     .filter((c) => c.seconds >= 30 && c.seconds <= 6 * 3600);
 
   if (candidates.length === 0) return null;
@@ -29,17 +47,90 @@ function extractTreadmillDuration(text: string): string | null {
   return candidates[0].raw;
 }
 
-function extractTreadmillDistance(text: string): string | null {
-  const matches = [...text.matchAll(/\b(\d{1,2}\.\d{1,2})\b/g)];
+function extractTreadmillDistance(text: string, durationSeconds?: number): string | null {
+  const normalized = text
+    .toUpperCase()
+    .replace(/[OQ]/g, "0")
+    .replace(/[IL]/g, "1")
+    .replace(/S/g, "5")
+    .replace(/,/g, ".");
+
+  const matches = [...normalized.matchAll(/\b(\d{1,2}\.\d{1,2})\b/g)];
   if (matches.length === 0) return null;
 
-  const candidates = matches
+  let candidates = matches
     .map((m) => Number(m[1]))
-    .filter((n) => !Number.isNaN(n) && n > 0.05 && n < 100)
-    .sort((a, b) => b - a);
+    .filter((n) => !Number.isNaN(n) && n > 0.05 && n < 100);
+
+  if (durationSeconds && durationSeconds > 0) {
+    candidates = candidates.filter((distanceKm) => {
+      const speed = distanceKm / (durationSeconds / 3600);
+      return speed <= 30 && speed >= 1;
+    });
+  }
+
+  candidates.sort((a, b) => b - a);
 
   if (candidates.length === 0) return null;
   return candidates[0].toFixed(2);
+}
+
+async function createEnhancedImageUrl(file: File): Promise<string | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    const originalUrl = URL.createObjectURL(file);
+
+    img.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        const scale = 2;
+        canvas.width = img.width * scale;
+        canvas.height = img.height * scale;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          URL.revokeObjectURL(originalUrl);
+          resolve(null);
+          return;
+        }
+
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = imageData.data;
+
+        for (let i = 0; i < data.length; i += 4) {
+          const r = data[i];
+          const g = data[i + 1];
+          const b = data[i + 2];
+          const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+          const contrasted = Math.max(0, Math.min(255, (gray - 128) * 1.8 + 128));
+          const bw = contrasted > 95 ? 255 : 0;
+          data[i] = bw;
+          data[i + 1] = bw;
+          data[i + 2] = bw;
+        }
+
+        ctx.putImageData(imageData, 0, 0);
+        canvas.toBlob((blob) => {
+          URL.revokeObjectURL(originalUrl);
+          if (!blob) {
+            resolve(null);
+            return;
+          }
+          resolve(URL.createObjectURL(blob));
+        }, "image/png");
+      } catch {
+        URL.revokeObjectURL(originalUrl);
+        resolve(null);
+      }
+    };
+
+    img.onerror = () => {
+      URL.revokeObjectURL(originalUrl);
+      resolve(null);
+    };
+
+    img.src = originalUrl;
+  });
 }
 
 /** Convert MM:SS string or plain digits to total seconds */
@@ -207,11 +298,34 @@ function CameraMode() {
       });
       const url = URL.createObjectURL(file);
       const { data: { text } } = await worker.recognize(url);
+
+      let detectedDuration = extractTreadmillDuration(text);
+      let durationSeconds = 0;
+      if (detectedDuration) {
+        const d = parseOcrDuration(detectedDuration);
+        durationSeconds = durationToSeconds(d.mins, d.secs);
+      }
+
+      let detectedDistance = extractTreadmillDistance(text, durationSeconds || undefined);
+
+      if (!detectedDuration) {
+        const enhancedUrl = await createEnhancedImageUrl(file);
+        if (enhancedUrl) {
+          const { data: { text: enhancedText } } = await worker.recognize(enhancedUrl);
+          URL.revokeObjectURL(enhancedUrl);
+          detectedDuration = extractTreadmillDuration(enhancedText);
+          if (detectedDuration) {
+            const d = parseOcrDuration(detectedDuration);
+            durationSeconds = durationToSeconds(d.mins, d.secs);
+          }
+          if (!detectedDistance) {
+            detectedDistance = extractTreadmillDistance(enhancedText, durationSeconds || undefined);
+          }
+        }
+      }
+
       await worker.terminate();
       URL.revokeObjectURL(url);
-
-      const detectedDuration = extractTreadmillDuration(text);
-      const detectedDistance = extractTreadmillDistance(text);
 
       if (detectedDuration || detectedDistance) {
         setOcr({
