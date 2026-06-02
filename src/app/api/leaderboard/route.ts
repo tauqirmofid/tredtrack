@@ -12,17 +12,19 @@ export async function GET() {
     },
   });
 
+  type RunEntry = { distance: number; duration: number; avgSpeed: number; date: Date };
   type UserWithRuns = (typeof users)[number];
 
   const leaderboard = users
     .map((u: UserWithRuns) => {
-      const totalDistance = Math.round(u.runs.reduce((s: number, r) => s + r.distance, 0) * 100) / 100;
-      const totalRuns = u.runs.length;
+      const runs = u.runs as RunEntry[];
+      const totalDistance = Math.round(runs.reduce((s: number, r: RunEntry) => s + r.distance, 0) * 100) / 100;
+      const totalRuns = runs.length;
       const avgSpeed =
         totalRuns > 0
-          ? Math.round((u.runs.reduce((s: number, r) => s + r.avgSpeed, 0) / totalRuns) * 10) / 10
+          ? Math.round((runs.reduce((s: number, r: RunEntry) => s + r.avgSpeed, 0) / totalRuns) * 10) / 10
           : 0;
-      const lastRun = u.runs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+      const lastRun = [...runs].sort((a: RunEntry, b: RunEntry) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
       return {
         id: u.id,
         name: u.name,
