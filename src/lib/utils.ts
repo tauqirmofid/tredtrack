@@ -7,10 +7,12 @@ export function formatDuration(seconds: number): string {
 }
 
 export function parseDuration(str: string): number {
-  // Accepts HH:MM:SS or MM:SS
+  // Accepts HH:MM:SS or MM:SS or plain number (treated as minutes)
   const parts = str.split(":").map(Number);
   if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
   if (parts.length === 2) return parts[0] * 60 + parts[1];
+  const n = Number(str);
+  if (!isNaN(n) && n > 0) return n * 60; // plain number = minutes
   return 0;
 }
 

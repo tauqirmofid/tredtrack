@@ -23,8 +23,8 @@ export async function POST(req: NextRequest) {
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { duration, distance, date, notes, imageUrl, source, maxSpeed } = await req.json();
-  if (!duration || !distance) {
-    return NextResponse.json({ error: "Duration and distance required" }, { status: 400 });
+  if (!duration || !distance || isNaN(Number(duration)) || isNaN(Number(distance)) || Number(duration) <= 0 || Number(distance) <= 0) {
+    return NextResponse.json({ error: "Valid duration and distance required" }, { status: 400 });
   }
 
   const avgSpeed = calcAvgSpeed(distance, duration);
