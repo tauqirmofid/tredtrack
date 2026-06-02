@@ -479,6 +479,9 @@ function CameraMode() {
     setOcrError(null);
     setOcrSample(null);
     try {
+      // Kick off Vision AI in parallel — always, not just as last resort
+      const aiPromise = parseWithVisionAI(file);
+
       const worker = await createWorker("eng");
       await worker.setParameters({
         tessedit_char_whitelist: "0123456789:. ",
@@ -545,20 +548,19 @@ function CameraMode() {
         }
       }
 
-      if (!detectedDuration) {
-        const aiParsed = await parseWithVisionAI(file);
-        if (aiParsed?.duration) {
-          detectedDuration = aiParsed.duration;
-          const d = parseOcrDuration(detectedDuration);
-          durationSeconds = durationToSeconds(d.mins, d.secs);
-        }
-        if (!detectedDistance && aiParsed?.distance) {
-          detectedDistance = aiParsed.distance;
-        }
-      }
-
       await worker.terminate();
       URL.revokeObjectURL(url);
+
+      // Always prefer Vision AI result — it handles LCD displays far better than Tesseract
+      const aiParsed = await aiPromise;
+      if (aiParsed?.duration) {
+        detectedDuration = aiParsed.duration;
+        const d = parseOcrDuration(detectedDuration);
+        durationSeconds = durationToSeconds(d.mins, d.secs);
+      }
+      if (aiParsed?.distance) {
+        detectedDistance = aiParsed.distance;
+      }
 
       if (detectedDuration || detectedDistance) {
         setOcr({
