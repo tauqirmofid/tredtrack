@@ -8,6 +8,11 @@ import { createWorker } from "tesseract.js";
 
 type Mode = "choose" | "camera" | "manual";
 
+function getLocalDateTimeValue(date = new Date()): string {
+  const tzOffsetMs = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - tzOffsetMs).toISOString().slice(0, 16);
+}
+
 function extractTreadmillDuration(text: string): string | null {
   const normalized = text
     .toUpperCase()
@@ -468,7 +473,7 @@ function CameraMode() {
   const [ocrLoading, setOcrLoading] = useState(false);
   const [mins, setMins] = useState(0);
   const [secs, setSecs] = useState(0);
-  const [form, setForm] = useState({ distance: "", notes: "", date: new Date().toISOString().slice(0, 16) });
+  const [form, setForm] = useState({ distance: "", notes: "", date: getLocalDateTimeValue() });
   const [saving, setSaving] = useState(false);
   const [done, setDone] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -732,7 +737,7 @@ function ManualMode() {
   const router = useRouter();
   const [mins, setMins] = useState(0);
   const [secs, setSecs] = useState(0);
-  const [form, setForm] = useState({ distance: "", notes: "", date: new Date().toISOString().slice(0, 16) });
+  const [form, setForm] = useState({ distance: "", notes: "", date: getLocalDateTimeValue() });
   const [saving, setSaving] = useState(false);
   const [done, setDone] = useState(false);
 

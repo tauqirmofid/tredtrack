@@ -4,6 +4,7 @@ import Link from "next/link";
 import { formatDuration, formatDistance } from "@/lib/utils";
 import { Camera, Pencil, Flame, Zap, Route, Clock } from "lucide-react";
 import { format } from "date-fns";
+import { headers } from "next/headers";
 
 type Run = { id: string; distance: number; duration: number; calories: number | null; date: Date; avgSpeed: number; maxSpeed: number | null; notes: string | null; source: string | null; imageUrl: string | null; userId: string };
 
@@ -12,6 +13,33 @@ export const dynamic = "force-dynamic";
 export default async function DashboardPage() {
   const session = await auth();
   if (!session?.user?.id) return null;
+
+  const headerStore = await headers();
+  const timeZone = headerStore.get("x-vercel-ip-timezone") ?? "UTC";
+
+  const dayKeyFormatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const hourFormatter = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hour: "2-digit",
+    hour12: false,
+  });
+  const todayLabelFormatter = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+  });
+
+  const dayKey = (d: Date) => dayKeyFormatter.format(new Date(d));
+  const keyToDayNumber = (k: string) => {
+    const [year, month, day] = k.split("-").map(Number);
+    return Math.floor(Date.UTC(year, month - 1, day) / 86400000);
+  };
 
   const user = await prisma.user.findUnique({ where: { id: session.user.id } });
   const recentRuns: Run[] = await prisma.run.findMany({
@@ -24,13 +52,11 @@ export default async function DashboardPage() {
   const totalDuration = recentRuns.reduce((s: number, r: Run) => s + r.duration, 0);
   const totalCalories = recentRuns.reduce((s: number, r: Run) => s + (r.calories ?? 0), 0);
 
-  // Today's run
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  // Today's run (timezone-aware)
+  const todayKey = dayKey(new Date());
+  const todayDayNumber = keyToDayNumber(todayKey);
   const todayRuns = recentRuns.filter((r: Run) => {
-    const d = new Date(r.date);
-    d.setHours(0, 0, 0, 0);
-    return d.getTime() === today.getTime();
+    return dayKey(new Date(r.date)) === todayKey;
   });
   const todayDistance = todayRuns.reduce((s: number, r: Run) => s + r.distance, 0);
   const todayDuration = todayRuns.reduce((s: number, r: Run) => s + r.duration, 0);
@@ -41,22 +67,19 @@ export default async function DashboardPage() {
     orderBy: { date: "asc" },
     select: { date: true },
   });
-  const runDays = [...new Set(allRuns.map((r: { date: Date }) => {
-    const d = new Date(r.date);
-    d.setHours(0, 0, 0, 0);
-    return d.getTime();
-  }))].sort((a: number, b: number) => b - a);
+  const runDays = [...new Set(allRuns.map((r: { date: Date }) => keyToDayNumber(dayKey(new Date(r.date)))))]
+    .sort((a: number, b: number) => b - a);
   let streak = 0;
-  let check = today.getTime();
+  let check = todayDayNumber;
   for (const day of runDays) {
-    if (day === check || day === check - 86400000) {
+    if (day === check || day === check - 1) {
       streak++;
-      check = day - 86400000;
+      check = day - 1;
     } else break;
   }
 
   const greeting = () => {
-    const h = new Date().getHours();
+    const h = Number(hourFormatter.format(new Date()));
     if (h < 12) return "Good morning";
     if (h < 18) return "Good afternoon";
     return "Good evening";
@@ -93,7 +116,7 @@ export default async function DashboardPage() {
               Today
             </p>
             <p className="text-lg font-semibold" style={{ color: "#f5f5f7" }}>
-              {format(new Date(), "EEEE, MMM d")}
+              {todayLabelFormatter.format(new Date())}
             </p>
           </div>
           {todayRuns.length > 0 && (
