@@ -8,6 +8,40 @@ import { createWorker } from "tesseract.js";
 
 type Mode = "choose" | "camera" | "manual";
 
+function extractTreadmillDuration(text: string): string | null {
+  const matches = [...text.matchAll(/\b(\d{1,2}):([0-5]\d)(?::([0-5]\d))?\b/g)];
+  if (matches.length === 0) return null;
+
+  const candidates = matches
+    .map((m) => {
+      const hOrM = Number(m[1]);
+      const mmOrSs = Number(m[2]);
+      const maybeSs = m[3] ? Number(m[3]) : undefined;
+      const seconds = maybeSs !== undefined
+        ? hOrM * 3600 + mmOrSs * 60 + maybeSs
+        : hOrM * 60 + mmOrSs;
+      return { raw: m[0], seconds };
+    })
+    .filter((c) => c.seconds >= 30 && c.seconds <= 6 * 3600);
+
+  if (candidates.length === 0) return null;
+  candidates.sort((a, b) => b.seconds - a.seconds);
+  return candidates[0].raw;
+}
+
+function extractTreadmillDistance(text: string): string | null {
+  const matches = [...text.matchAll(/\b(\d{1,2}\.\d{1,2})\b/g)];
+  if (matches.length === 0) return null;
+
+  const candidates = matches
+    .map((m) => Number(m[1]))
+    .filter((n) => !Number.isNaN(n) && n > 0.05 && n < 100)
+    .sort((a, b) => b - a);
+
+  if (candidates.length === 0) return null;
+  return candidates[0].toFixed(2);
+}
+
 /** Convert MM:SS string or plain digits to total seconds */
 function parseOcrDuration(str: string): { mins: number; secs: number } {
   const parts = str.split(":").map(Number);
@@ -152,6 +186,7 @@ function CameraMode() {
   const [image, setImage] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [ocr, setOcr] = useState<{ duration?: string; distance?: string } | null>(null);
+  const [ocrError, setOcrError] = useState<string | null>(null);
   const [ocrLoading, setOcrLoading] = useState(false);
   const [mins, setMins] = useState(0);
   const [secs, setSecs] = useState(0);
@@ -162,31 +197,42 @@ function CameraMode() {
 
   const processImage = useCallback(async (file: File) => {
     setOcrLoading(true);
+    setOcr(null);
+    setOcrError(null);
     try {
       const worker = await createWorker("eng");
+      await worker.setParameters({
+        tessedit_char_whitelist: "0123456789:.",
+        preserve_interword_spaces: "1",
+      });
       const url = URL.createObjectURL(file);
       const { data: { text } } = await worker.recognize(url);
       await worker.terminate();
+      URL.revokeObjectURL(url);
 
-      const timeMatch = text.match(/(\d{1,2}:\d{2}(?::\d{2})?)/g);
-      const distMatch = text.match(/(\d+\.\d{1,2})/g);
+      const detectedDuration = extractTreadmillDuration(text);
+      const detectedDistance = extractTreadmillDistance(text);
 
-      const extracted: { duration?: string; distance?: string } = {};
-      if (timeMatch && timeMatch.length > 0) {
-        extracted.duration = timeMatch.sort((a: string, b: string) => b.length - a.length)[0];
+      if (detectedDuration || detectedDistance) {
+        setOcr({
+          duration: detectedDuration ?? undefined,
+          distance: detectedDistance ?? undefined,
+        });
       }
-      if (distMatch && distMatch.length > 0) {
-        const dists = distMatch.map(Number).filter((n: number) => n > 0.05 && n < 100);
-        if (dists.length > 0) extracted.distance = String(Math.min(...dists));
-      }
 
-      setOcr(extracted);
-      if (extracted.duration) {
-        const { mins: m, secs: s } = parseOcrDuration(extracted.duration);
+      if (detectedDuration) {
+        const { mins: m, secs: s } = parseOcrDuration(detectedDuration);
         setMins(m); setSecs(s);
+      } else {
+        setOcrError("Couldn’t detect treadmill time. Please retake photo with timer clearly visible.");
       }
-      if (extracted.distance) setForm((f) => ({ ...f, distance: extracted.distance! }));
-    } catch { /* silently ignore */ }
+
+      if (detectedDistance) {
+        setForm((f) => ({ ...f, distance: detectedDistance }));
+      }
+    } catch {
+      setOcrError("Couldn’t read this image. Try a clearer, close-up treadmill display photo.");
+    }
     setOcrLoading(false);
   }, []);
 
@@ -261,7 +307,7 @@ function CameraMode() {
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={preview} alt="Treadmill" className="w-full rounded-2xl object-cover max-h-64" />
           <button
-            onClick={() => { setPreview(null); setImage(null); setOcr(null); setMins(0); setSecs(0); }}
+            onClick={() => { setPreview(null); setImage(null); setOcr(null); setOcrError(null); setMins(0); setSecs(0); }}
             className="absolute top-3 right-3 w-8 h-8 rounded-full flex items-center justify-center"
             style={{ background: "rgba(0,0,0,0.6)" }}>
             <X size={16} color="white" />
@@ -278,13 +324,27 @@ function CameraMode() {
         </div>
       )}
 
-      {ocr && !ocrLoading && (
+      {ocr?.duration && !ocrLoading && (
         <div className="card p-3" style={{ background: "rgba(48,209,88,0.08)", border: "1px solid rgba(48,209,88,0.2)" }}>
           <p className="text-xs font-semibold mb-1" style={{ color: "#30d158" }}>✓ Auto-detected — verify below</p>
           <p className="text-xs" style={{ color: "#8e8e93" }}>
             {ocr.duration && `Time: ${ocr.duration}`}{ocr.duration && ocr.distance && " · "}
             {ocr.distance && `Distance: ${ocr.distance} km`}
           </p>
+        </div>
+      )}
+
+      {!ocrLoading && preview && !ocr?.duration && (
+        <div className="card p-3" style={{ background: "rgba(255,159,10,0.08)", border: "1px solid rgba(255,159,10,0.2)" }}>
+          <p className="text-xs font-semibold mb-1" style={{ color: "#ff9f0a" }}>Time not detected</p>
+          <p className="text-xs" style={{ color: "#8e8e93" }}>
+            {ocrError ?? "Please retake with the treadmill timer centered and clearly lit."}
+          </p>
+          {ocr?.distance && (
+            <p className="text-xs mt-1" style={{ color: "#8e8e93" }}>
+              Detected distance: {ocr.distance} km
+            </p>
+          )}
         </div>
       )}
 
