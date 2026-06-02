@@ -479,9 +479,6 @@ function CameraMode() {
     setOcrError(null);
     setOcrSample(null);
     try {
-      // Kick off Vision AI in parallel — always, not just as last resort
-      const aiPromise = parseWithVisionAI(file);
-
       const worker = await createWorker("eng");
       await worker.setParameters({
         tessedit_char_whitelist: "0123456789:. ",
@@ -551,17 +548,6 @@ function CameraMode() {
       await worker.terminate();
       URL.revokeObjectURL(url);
 
-      // Always prefer Vision AI result — it handles LCD displays far better than Tesseract
-      const aiParsed = await aiPromise;
-      if (aiParsed?.duration) {
-        detectedDuration = aiParsed.duration;
-        const d = parseOcrDuration(detectedDuration);
-        durationSeconds = durationToSeconds(d.mins, d.secs);
-      }
-      if (aiParsed?.distance) {
-        detectedDistance = aiParsed.distance;
-      }
-
       if (detectedDuration || detectedDistance) {
         setOcr({
           duration: detectedDuration ?? undefined,
@@ -598,14 +584,8 @@ function CameraMode() {
     if (totalSecs <= 0 || !form.distance) return;
     setSaving(true);
 
-    let imageUrl: string | null = null;
-    if (image) {
-      const fd = new FormData();
-      fd.append("image", image);
-      const res = await fetch("/api/upload", { method: "POST", body: fd });
-      const data = await res.json();
-      imageUrl = data.imageUrl;
-    }
+    // Images are processed client-side only; we don't store them on the server
+    const imageUrl: string | null = null;
 
     await fetch("/api/runs", {
       method: "POST",
