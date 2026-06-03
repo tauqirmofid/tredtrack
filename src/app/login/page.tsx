@@ -25,7 +25,11 @@ export default function LoginPage() {
     });
     setLoading(false);
     if (res?.error) {
-      setError("Invalid username or password");
+      if (res.error.includes("DB_UNAVAILABLE") || res.error.includes("Configuration") || res.error.includes("CallbackRouteError")) {
+        setError("Database is temporarily unavailable. Please try again.");
+      } else {
+        setError("Invalid username or password");
+      }
     } else {
       router.push("/dashboard");
     }

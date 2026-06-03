@@ -21,6 +21,12 @@ export async function POST(req: NextRequest) {
       city: city ?? null,
       country: country ?? null,
     },
+    select: {
+      latitude: true,
+      longitude: true,
+      city: true,
+      country: true,
+    },
   });
 
   return NextResponse.json({

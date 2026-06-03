@@ -14,16 +14,26 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       },
       async authorize(credentials) {
         if (!credentials?.username || !credentials?.password) return null;
-        const user = await prisma.user.findUnique({
-          where: { username: credentials.username as string },
-        });
-        if (!user) return null;
-        const valid = await bcrypt.compare(
-          credentials.password as string,
-          user.password
-        );
-        if (!valid) return null;
-        return { id: user.id, name: user.name, email: user.username };
+        try {
+          const user = await prisma.user.findUnique({
+            where: { username: credentials.username as string },
+            select: {
+              id: true,
+              name: true,
+              username: true,
+              password: true,
+            },
+          });
+          if (!user) return null;
+          const valid = await bcrypt.compare(
+            credentials.password as string,
+            user.password
+          );
+          if (!valid) return null;
+          return { id: user.id, name: user.name, email: user.username };
+        } catch {
+          throw new Error("DB_UNAVAILABLE");
+        }
       },
     }),
   ],

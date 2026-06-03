@@ -14,6 +14,38 @@ export default async function DashboardPage() {
   const session = await auth();
   if (!session?.user?.id) return null;
 
+  let user: { name: string | null } | null = null;
+  let recentRuns: Run[] = [];
+  let allRuns: { date: Date }[] = [];
+
+  try {
+    user = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { name: true },
+    });
+    recentRuns = await prisma.run.findMany({
+      where: { userId: session.user.id },
+      orderBy: { date: "desc" },
+      take: 10,
+    });
+    allRuns = await prisma.run.findMany({
+      where: { userId: session.user.id },
+      orderBy: { date: "asc" },
+      select: { date: true },
+    });
+  } catch {
+    return (
+      <div className="px-4 pt-14 pb-4">
+        <div className="card p-5">
+          <h1 className="text-2xl font-bold mb-2" style={{ color: "#f5f5f7" }}>Dashboard</h1>
+          <p className="text-sm" style={{ color: "#8e8e93" }}>
+            Database is temporarily unavailable. Please try again shortly.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   const headerStore = await headers();
   const timeZone = headerStore.get("x-vercel-ip-timezone") ?? "UTC";
 
@@ -41,13 +73,6 @@ export default async function DashboardPage() {
     return Math.floor(Date.UTC(year, month - 1, day) / 86400000);
   };
 
-  const user = await prisma.user.findUnique({ where: { id: session.user.id } });
-  const recentRuns: Run[] = await prisma.run.findMany({
-    where: { userId: session.user.id },
-    orderBy: { date: "desc" },
-    take: 10,
-  });
-
   const totalDistance = recentRuns.reduce((s: number, r: Run) => s + r.distance, 0);
   const totalDuration = recentRuns.reduce((s: number, r: Run) => s + r.duration, 0);
   const totalCalories = recentRuns.reduce((s: number, r: Run) => s + (r.calories ?? 0), 0);
@@ -62,11 +87,6 @@ export default async function DashboardPage() {
   const todayDuration = todayRuns.reduce((s: number, r: Run) => s + r.duration, 0);
 
   // Streak
-  const allRuns: { date: Date }[] = await prisma.run.findMany({
-    where: { userId: session.user.id },
-    orderBy: { date: "asc" },
-    select: { date: true },
-  });
   const runDays = [...new Set(allRuns.map((r: { date: Date }) => keyToDayNumber(dayKey(new Date(r.date)))))]
     .sort((a: number, b: number) => b - a);
   let streak = 0;
