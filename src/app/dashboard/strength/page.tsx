@@ -52,13 +52,27 @@ export default function StrengthPage() {
 
   const totalVolume = useMemo(() => logs.reduce((s, l) => s + l.volumeKg, 0), [logs]);
 
+  async function safeJson<T>(res: Response, fallback: T): Promise<T> {
+    if (!res.ok) return fallback;
+    try {
+      return await res.json() as T;
+    } catch {
+      return fallback;
+    }
+  }
+
   async function load() {
     const [profileRes, logsRes] = await Promise.all([
       fetch("/api/profile"),
       fetch("/api/strength?limit=40"),
     ]);
-    const profileData = await profileRes.json() as Profile;
-    const logsData = await logsRes.json() as StrengthLog[];
+    const profileData = await safeJson<Profile>(profileRes, {
+      weightKg: null,
+      dumbbellWeightKg: null,
+      barbellWeightKg: null,
+      name: null,
+    });
+    const logsData = await safeJson<StrengthLog[]>(logsRes, []);
 
     setDefaults({
       dumbbellWeightKg: profileData.dumbbellWeightKg ? String(profileData.dumbbellWeightKg) : "",

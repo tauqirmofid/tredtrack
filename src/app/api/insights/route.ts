@@ -19,11 +19,38 @@ export async function GET() {
   const since = new Date();
   since.setDate(since.getDate() - WINDOW_DAYS);
 
-  const [user, runs, strengthLogs] = await Promise.all([
-    prisma.user.findUnique({ where: { id: session.user.id }, select: { weightKg: true, name: true } }),
-    prisma.run.findMany({ where: { userId: session.user.id, date: { gte: since } }, orderBy: { date: "desc" } }),
-    prisma.strengthLog.findMany({ where: { userId: session.user.id, date: { gte: since } }, orderBy: { date: "desc" } }),
-  ]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const prismaAny = prisma as any;
+
+  let user: { weightKg: number | null; name: string | null } | null = null;
+  let runs: Array<{ duration: number; calories: number | null; distance: number }> = [];
+  let strengthLogs: Array<{ durationMinutes: number | null; sets: number; calories: number | null; reps: number; volumeKg: number }> = [];
+
+  try {
+    user = await prismaAny.user.findUnique({ where: { id: session.user.id }, select: { weightKg: true, name: true } });
+  } catch {
+    user = { weightKg: null, name: null };
+  }
+
+  try {
+    runs = await prisma.run.findMany({
+      where: { userId: session.user.id, date: { gte: since } },
+      orderBy: { date: "desc" },
+      select: { duration: true, calories: true, distance: true },
+    });
+  } catch {
+    runs = [];
+  }
+
+  try {
+    strengthLogs = await prismaAny.strengthLog.findMany({
+      where: { userId: session.user.id, date: { gte: since } },
+      orderBy: { date: "desc" },
+      select: { durationMinutes: true, sets: true, calories: true, reps: true, volumeKg: true },
+    });
+  } catch {
+    strengthLogs = [];
+  }
 
   const currentWeightKg = user?.weightKg ?? null;
   const weeks = WINDOW_DAYS / 7;

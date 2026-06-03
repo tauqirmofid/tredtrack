@@ -32,13 +32,49 @@ export default function InsightsPage() {
   const [weightKg, setWeightKg] = useState("");
   const [insight, setInsight] = useState<InsightResponse | null>(null);
 
+  async function safeJson<T>(res: Response, fallback: T): Promise<T> {
+    if (!res.ok) return fallback;
+    try {
+      return await res.json() as T;
+    } catch {
+      return fallback;
+    }
+  }
+
   async function load() {
     const [profileRes, insightRes] = await Promise.all([
       fetch("/api/profile"),
       fetch("/api/insights"),
     ]);
-    const profile = await profileRes.json() as { weightKg: number | null };
-    const data = await insightRes.json() as InsightResponse;
+    const profile = await safeJson(profileRes, { weightKg: null });
+    const data = await safeJson<InsightResponse | null>(insightRes, null);
+    if (!data) {
+      setInsight({
+        profile: { name: "Athlete", weightKg: profile.weightKg },
+        metrics: {
+          windowDays: 42,
+          weeklyRunMinutes: 0,
+          weeklyStrengthMinutes: 0,
+          weeklyCaloriesBurned: 0,
+          runSessionsPerWeek: 0,
+          strengthSessionsPerWeek: 0,
+          strengthVolumeKgPerWeek: 0,
+          weightLossRateKgPerWeek: 0,
+          etaWeeksForTargetLoss: null,
+        },
+        targets: {
+          weeklyRunMinutes: 180,
+          weeklyStrengthSessions: 3,
+          suggestedExtraRunSessions: 3,
+          suggestedExtraStrengthSessions: 2,
+        },
+        summary: "Unable to load insights right now. Try again shortly.",
+        recommendations: ["Keep training consistently while insights sync."],
+      });
+      setWeightKg(profile.weightKg ? String(profile.weightKg) : "");
+      setLoading(false);
+      return;
+    }
     setWeightKg(profile.weightKg ? String(profile.weightKg) : "");
     setInsight(data);
     setLoading(false);

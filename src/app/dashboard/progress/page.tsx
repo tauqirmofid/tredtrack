@@ -21,6 +21,8 @@ interface Stats {
   totalDuration: number;
   totalCalories: number;
   totalRuns: number;
+  totalStrengthSessions?: number;
+  totalStrengthVolume?: number;
   avgSpeed: number;
   streak: number;
   weekly: { date: string; distance: number; duration: number }[];
@@ -55,8 +57,19 @@ export default function ProgressPage() {
       fetch("/api/stats"),
       fetch("/api/runs?limit=30"),
     ]);
-    setStats(await statsRes.json());
-    setRuns(await runsRes.json());
+
+    if (statsRes.ok) {
+      setStats(await statsRes.json());
+    } else {
+      setStats(null);
+    }
+
+    if (runsRes.ok) {
+      setRuns(await runsRes.json());
+    } else {
+      setRuns([]);
+    }
+
     setLoading(false);
   }
 
@@ -92,6 +105,8 @@ export default function ProgressPage() {
         <StatCard label="Total Distance" value={(stats?.totalDistance ?? 0).toFixed(1)} unit="km" color="#0a84ff" />
         <StatCard label="Total Time" value={formatDuration(stats?.totalDuration ?? 0)} unit="" color="#ff9f0a" />
         <StatCard label="Avg Speed" value={String(stats?.avgSpeed ?? 0)} unit="km/h" color="#bf5af2" />
+        <StatCard label="Strength Sessions" value={String(stats?.totalStrengthSessions ?? 0)} unit="sessions" color="#64d2ff" />
+        <StatCard label="Total Lifted" value={String(stats?.totalStrengthVolume ?? 0)} unit="kg" color="#ff375f" />
       </div>
 
       {/* Weekly distance bar chart */}
