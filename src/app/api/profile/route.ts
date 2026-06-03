@@ -14,16 +14,41 @@ export async function GET() {
     const user = await prismaAny.user.findUnique({
       where: { id: session.user.id },
       select: {
+        heightCm: true,
         weightKg: true,
         dumbbellWeightKg: true,
         barbellWeightKg: true,
         name: true,
+        weightLogs: {
+          orderBy: { date: "desc" },
+          take: 30,
+          select: {
+            id: true,
+            date: true,
+            weightKg: true,
+            source: true,
+          },
+        },
       },
     });
 
-    return NextResponse.json(user ?? { weightKg: null, dumbbellWeightKg: null, barbellWeightKg: null, name: null });
+    return NextResponse.json(user ?? {
+      heightCm: null,
+      weightKg: null,
+      dumbbellWeightKg: null,
+      barbellWeightKg: null,
+      name: null,
+      weightLogs: [],
+    });
   } catch {
-    return NextResponse.json({ weightKg: null, dumbbellWeightKg: null, barbellWeightKg: null, name: null });
+    return NextResponse.json({
+      heightCm: null,
+      weightKg: null,
+      dumbbellWeightKg: null,
+      barbellWeightKg: null,
+      name: null,
+      weightLogs: [],
+    });
   }
 }
 
@@ -32,6 +57,7 @@ export async function PATCH(req: NextRequest) {
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await req.json() as {
+    heightCm?: number | null;
     weightKg?: number | null;
     dumbbellWeightKg?: number | null;
     barbellWeightKg?: number | null;
@@ -45,15 +71,17 @@ export async function PATCH(req: NextRequest) {
     return n;
   };
 
+  const heightCm = toNullableNumber(body.heightCm);
   const weightKg = toNullableNumber(body.weightKg);
   const dumbbellWeightKg = toNullableNumber(body.dumbbellWeightKg);
   const barbellWeightKg = toNullableNumber(body.barbellWeightKg);
 
-  if ([weightKg, dumbbellWeightKg, barbellWeightKg].includes("INVALID")) {
+  if ([heightCm, weightKg, dumbbellWeightKg, barbellWeightKg].includes("INVALID")) {
     return NextResponse.json({ error: "Invalid weight value" }, { status: 400 });
   }
 
-  const data: { weightKg?: number | null; dumbbellWeightKg?: number | null; barbellWeightKg?: number | null } = {};
+  const data: { heightCm?: number | null; weightKg?: number | null; dumbbellWeightKg?: number | null; barbellWeightKg?: number | null } = {};
+  if (heightCm !== undefined) data.heightCm = heightCm as number | null;
   if (weightKg !== undefined) data.weightKg = weightKg as number | null;
   if (dumbbellWeightKg !== undefined) data.dumbbellWeightKg = dumbbellWeightKg as number | null;
   if (barbellWeightKg !== undefined) data.barbellWeightKg = barbellWeightKg as number | null;
@@ -61,20 +89,44 @@ export async function PATCH(req: NextRequest) {
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const prismaAny = prisma as any;
+    const existingUser = await prismaAny.user.findUnique({
+      where: { id: session.user.id },
+      select: { weightKg: true },
+    });
+
     const user = await prismaAny.user.update({
       where: { id: session.user.id },
       data,
       select: {
+        heightCm: true,
         weightKg: true,
         dumbbellWeightKg: true,
         barbellWeightKg: true,
       },
     });
 
+    if (weightKg !== undefined && weightKg !== null) {
+      const previousWeight = existingUser?.weightKg ?? null;
+      if (previousWeight === null || Math.abs(Number(weightKg) - Number(previousWeight)) >= 0.05) {
+        try {
+          await prismaAny.weightLog.create({
+            data: {
+              userId: session.user.id,
+              weightKg: Number(weightKg),
+              source: "manual",
+            },
+          });
+        } catch {
+          // non-fatal
+        }
+      }
+    }
+
     return NextResponse.json(user);
   } catch {
     return NextResponse.json({
       error: "Profile weight fields are not available yet. Please redeploy and retry.",
+      heightCm: null,
       weightKg: null,
       dumbbellWeightKg: null,
       barbellWeightKg: null,

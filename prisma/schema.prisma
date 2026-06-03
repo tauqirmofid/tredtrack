@@ -12,6 +12,7 @@ model User {
   username  String   @unique
   password  String
   avatar    String?
+  heightCm  Float?
   weightKg  Float?
   dumbbellWeightKg Float?
   barbellWeightKg  Float?
@@ -23,6 +24,7 @@ model User {
   updatedAt DateTime @updatedAt
   runs      Run[]
   strengthLogs StrengthLog[]
+  weightLogs WeightLog[]
 }
 
 model Run {
@@ -56,6 +58,19 @@ model StrengthLog {
   calories        Float?
   notes           String?
   createdAt       DateTime @default(now())
+
+  @@index([userId, date])
+}
+
+model WeightLog {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date      DateTime @default(now())
+  weightKg  Float
+  source    String   @default("manual")
+  note      String?
+  createdAt DateTime @default(now())
 
   @@index([userId, date])
 }

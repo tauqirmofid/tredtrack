@@ -9,6 +9,13 @@ const WINDOW_DAYS = 42;
 const TARGET_LOSS_KG = 5;
 const MICRO_WINDOW_DAYS = 14;
 
+function bmiCategory(bmi: number) {
+  if (bmi < 18.5) return "Underweight";
+  if (bmi < 25) return "Healthy";
+  if (bmi < 30) return "Overweight";
+  return "Obese";
+}
+
 function round1(n: number) {
   return Math.round(n * 10) / 10;
 }
@@ -23,7 +30,13 @@ export async function GET() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const prismaAny = prisma as any;
 
-  let user: { weightKg: number | null; name: string | null; dumbbellWeightKg?: number | null; barbellWeightKg?: number | null } | null = null;
+  let user: {
+    weightKg: number | null;
+    name: string | null;
+    heightCm?: number | null;
+    dumbbellWeightKg?: number | null;
+    barbellWeightKg?: number | null;
+  } | null = null;
   let runs: Array<{ duration: number; calories: number | null; distance: number; date: Date }> = [];
   let strengthLogs: Array<{
     durationMinutes: number | null;
@@ -36,14 +49,15 @@ export async function GET() {
     weightKg: number;
     date: Date;
   }> = [];
+  let weightLogs: Array<{ date: Date; weightKg: number }> = [];
 
   try {
     user = await prismaAny.user.findUnique({
       where: { id: session.user.id },
-      select: { weightKg: true, name: true, dumbbellWeightKg: true, barbellWeightKg: true },
+      select: { weightKg: true, name: true, heightCm: true, dumbbellWeightKg: true, barbellWeightKg: true },
     });
   } catch {
-    user = { weightKg: null, name: null, dumbbellWeightKg: null, barbellWeightKg: null };
+    user = { weightKg: null, name: null, heightCm: null, dumbbellWeightKg: null, barbellWeightKg: null };
   }
 
   try {
@@ -74,6 +88,17 @@ export async function GET() {
     });
   } catch {
     strengthLogs = [];
+  }
+
+  try {
+    weightLogs = await prismaAny.weightLog.findMany({
+      where: { userId: session.user.id },
+      orderBy: { date: "asc" },
+      take: 120,
+      select: { date: true, weightKg: true },
+    });
+  } catch {
+    weightLogs = [];
   }
 
   const microSince = new Date();
@@ -133,6 +158,21 @@ export async function GET() {
     ? `At your current exercise pace, a ${TARGET_LOSS_KG}kg fat-loss target may take about ${Math.ceil(etaWeeks)} weeks (exercise-only estimate).`
     : `Current activity is too low to estimate reliable fat-loss pace yet. Build consistency for 2-3 weeks and re-check.`;
 
+  const heightM = user?.heightCm ? user.heightCm / 100 : null;
+  const bmi = currentWeightKg && heightM ? currentWeightKg / (heightM * heightM) : null;
+  const bmiText = bmi ? `${round1(bmi)} (${bmiCategory(bmi)})` : "Unknown";
+
+  const recentWeightLogs = weightLogs.filter((w) => new Date(w.date) >= microSince);
+  const firstWeight = recentWeightLogs[0]?.weightKg ?? null;
+  const lastWeight = recentWeightLogs[recentWeightLogs.length - 1]?.weightKg ?? currentWeightKg ?? null;
+  const actualChangeKg = firstWeight !== null && lastWeight !== null
+    ? Number((lastWeight - firstWeight).toFixed(2))
+    : null;
+  const expectedChangeKg = Number((-(runCaloriesTotal + strengthCaloriesTotal) / 7700 * (MICRO_WINDOW_DAYS / WINDOW_DAYS)).toFixed(2));
+  const mismatch = actualChangeKg !== null
+    ? Math.abs(actualChangeKg - expectedChangeKg) > 0.6
+    : false;
+
   const recentRunAvgMinutes = recentRuns.length > 0
     ? recentRuns.reduce((sum, r) => sum + r.duration, 0) / 60 / recentRuns.length
     : 24;
@@ -140,14 +180,27 @@ export async function GET() {
     ? recentRuns.reduce((sum, r) => sum + r.distance, 0) / recentRuns.length
     : 2.5;
 
-  const cardioMinutesTomorrow = Math.max(20, Math.min(45,
+  const yesterdayStart = new Date();
+  yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+  yesterdayStart.setHours(0, 0, 0, 0);
+  const yesterdayEnd = new Date(yesterdayStart);
+  yesterdayEnd.setHours(23, 59, 59, 999);
+  const yesterdayRuns = runs.filter((r) => {
+    const d = new Date(r.date);
+    return d >= yesterdayStart && d <= yesterdayEnd;
+  });
+  const yesterdayDistance = yesterdayRuns.reduce((sum, r) => sum + r.distance, 0);
+
+  const cardioMinutesTomorrow = Math.max(20, Math.min(50,
     Math.round(
       weeklyRunMinutes < 150
         ? recentRunAvgMinutes + 6
         : recentRunAvgMinutes
     )
   ));
-  const cardioDistanceTomorrow = Number((recentRunAvgDistance * (cardioMinutesTomorrow / Math.max(recentRunAvgMinutes, 1))).toFixed(1));
+  const cardioDistanceTomorrow = yesterdayDistance > 0
+    ? Number((yesterdayDistance * 1.2).toFixed(1))
+    : Number((recentRunAvgDistance * (cardioMinutesTomorrow / Math.max(recentRunAvgMinutes, 1))).toFixed(1));
 
   const latestStrength = recentStrength[0] ?? strengthLogs[0] ?? null;
   const strengthEquipment: "dumbbell" | "barbell" = (latestStrength?.equipment as "dumbbell" | "barbell" | undefined)
@@ -161,6 +214,9 @@ export async function GET() {
     ?? (strengthEquipment === "dumbbell" ? "Dumbbell Bench Press" : "Barbell Squat");
   const strengthMinutesTomorrow = latestStrength?.durationMinutes
     ?? Math.max(20, Math.round(strengthSets * 2.5 + 12));
+  const progressiveStrengthWeight = strengthWeight > 0
+    ? Number((strengthWeight + (strengthEquipment === "barbell" ? 2.5 : 1)).toFixed(1))
+    : 0;
 
   const todayDay = new Date().toLocaleDateString("en-US", { weekday: "long" });
   const tomorrow = new Date();
@@ -171,6 +227,9 @@ export async function GET() {
     profile: {
       name: user?.name ?? "Athlete",
       weightKg: currentWeightKg,
+      heightCm: user?.heightCm ?? null,
+      bmi: bmi ? round1(bmi) : null,
+      bmiCategory: bmi ? bmiCategory(bmi) : null,
     },
     metrics: {
       windowDays: WINDOW_DAYS,
@@ -195,9 +254,9 @@ export async function GET() {
       cardio: {
         minutes: cardioMinutesTomorrow,
         distanceKm: cardioDistanceTomorrow,
-        guidance: weeklyRunMinutes < 150
-          ? "Easy run or brisk incline walk"
-          : "Steady aerobic run",
+        guidance: yesterdayDistance > 0
+          ? `You ran ${Number(yesterdayDistance.toFixed(1))} km yesterday. Target ${cardioDistanceTomorrow} km tomorrow.`
+          : (weeklyRunMinutes < 150 ? "Easy run or brisk incline walk" : "Steady aerobic run"),
       },
       strength: {
         equipment: strengthEquipment,
@@ -205,12 +264,24 @@ export async function GET() {
         sets: strengthSets,
         reps: strengthReps,
         weightKg: strengthWeight,
+        suggestedNextWeightKg: progressiveStrengthWeight,
         durationMinutes: strengthMinutesTomorrow,
       },
       recovery: {
         hydrationLiters: Number(((currentWeightKg ?? 70) * 0.035).toFixed(1)),
         sleepHours: "7.5-9",
       },
+    },
+    weightAnalysis: {
+      currentWeightKg: currentWeightKg,
+      bmiText,
+      expectedChangeKg,
+      actualChangeKg,
+      alignedWithPlan: !mismatch,
+      message: mismatch
+        ? "Your logged weight change differs from expected trend. Check calorie intake, sleep, hydration, and consistency."
+        : "Your logged weight trend is aligned with your current training load.",
+      logs: weightLogs.slice(-20),
     },
     summary,
     recommendations,

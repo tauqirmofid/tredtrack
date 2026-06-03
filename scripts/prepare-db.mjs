@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { execSync } from "node:child_process";
 import { createClient } from "@libsql/client";
 
@@ -22,6 +23,7 @@ async function ensureRemoteLibsqlSchema(rawUrl) {
   const client = createClient({ url, authToken });
 
   const statements = [
+    'ALTER TABLE "User" ADD COLUMN "heightCm" REAL',
     'ALTER TABLE "User" ADD COLUMN "weightKg" REAL',
     'ALTER TABLE "User" ADD COLUMN "dumbbellWeightKg" REAL',
     'ALTER TABLE "User" ADD COLUMN "barbellWeightKg" REAL',
@@ -42,6 +44,17 @@ async function ensureRemoteLibsqlSchema(rawUrl) {
       FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
     )`,
     'CREATE INDEX IF NOT EXISTS "StrengthLog_userId_date_idx" ON "StrengthLog"("userId", "date")',
+    `CREATE TABLE IF NOT EXISTS "WeightLog" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "userId" TEXT NOT NULL,
+      "date" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "weightKg" REAL NOT NULL,
+      "source" TEXT NOT NULL DEFAULT 'manual',
+      "note" TEXT,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    )`,
+    'CREATE INDEX IF NOT EXISTS "WeightLog_userId_date_idx" ON "WeightLog"("userId", "date")',
   ];
 
   for (const sql of statements) {
@@ -64,7 +77,8 @@ async function ensureRemoteLibsqlSchema(rawUrl) {
 }
 
 async function main() {
-  const databaseUrl = (process.env.DATABASE_URL || "").trim();
+  const raw = (process.env.DATABASE_URL || "").trim();
+  const databaseUrl = raw.startsWith("\"") && raw.endsWith("\"") ? raw.slice(1, -1) : raw;
 
   if (!databaseUrl || databaseUrl.startsWith("file:")) {
     run("npx prisma db push");
