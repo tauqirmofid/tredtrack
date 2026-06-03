@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, CartesianGrid } from "recharts";
 import { formatDuration } from "@/lib/utils";
-import { format } from "date-fns";
 import { Loader2, Trash2 } from "lucide-react";
 
 interface Run {
@@ -25,6 +24,25 @@ interface Stats {
   avgSpeed: number;
   streak: number;
   weekly: { date: string; distance: number; duration: number }[];
+}
+
+/** Parse an ISO date string in local time (avoids UTC midnight → previous day shift) */
+function formatLocalDate(dateStr: string, fmt: string): string {
+  // dateStr may be "2026-06-04T10:30:00.000Z" or "2026-06-04T10:30"
+  // Replace the trailing Z so Date parses it as local, then format
+  const d = new Date(dateStr.endsWith("Z") ? dateStr : dateStr + "Z");
+  // Use Intl to build the parts we need
+  const locale = undefined;
+  const tzOpts: Intl.DateTimeFormatOptions = { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone };
+  const year = new Intl.DateTimeFormat(locale, { ...tzOpts, year: "numeric" }).format(d);
+  const month = new Intl.DateTimeFormat(locale, { ...tzOpts, month: "2-digit" }).format(d);
+  const day = new Intl.DateTimeFormat(locale, { ...tzOpts, day: "2-digit" }).format(d);
+  const weekday = new Intl.DateTimeFormat(locale, { ...tzOpts, weekday: "short" }).format(d);
+  const monthShort = new Intl.DateTimeFormat(locale, { ...tzOpts, month: "short" }).format(d);
+  const dayNum = new Intl.DateTimeFormat(locale, { ...tzOpts, day: "numeric" }).format(d);
+  return fmt
+    .replace("MM/dd", `${month}/${day}`)
+    .replace("EEE, MMM d, yyyy", `${weekday}, ${monthShort} ${dayNum}, ${year}`);
 }
 
 export default function ProgressPage() {
@@ -59,7 +77,7 @@ export default function ProgressPage() {
   }
 
   const speedData = runs.slice(0, 14).reverse().map((r) => ({
-    date: format(new Date(r.date), "MM/dd"),
+    date: formatLocalDate(r.date, "MM/dd"),
     speed: r.avgSpeed,
     distance: r.distance,
   }));
@@ -129,7 +147,7 @@ export default function ProgressPage() {
                       {run.distance.toFixed(2)} km · {formatDuration(run.duration)}
                     </p>
                     <p className="text-xs" style={{ color: "#8e8e93" }}>
-                      {format(new Date(run.date), "EEE, MMM d, yyyy")}
+                      {formatLocalDate(run.date, "EEE, MMM d, yyyy")}
                     </p>
                     {run.notes && <p className="text-xs mt-0.5" style={{ color: "#636366" }}>{run.notes}</p>}
                   </div>
