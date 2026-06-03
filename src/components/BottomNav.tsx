@@ -7,8 +7,9 @@ import { Home, BarChart2, Map, Plus, Trophy, Brain, Dumbbell } from "lucide-reac
 const tabs = [
   { href: "/dashboard", icon: Home, label: "Home" },
   { href: "/dashboard/journey", icon: Map, label: "Journey" },
-  { href: "/dashboard/log", icon: Plus, label: "Log Run" },
+
   { href: "/dashboard/strength", icon: Dumbbell, label: "Strength" },
+    { href: "/dashboard/log", icon: Plus, label: "Log Run" },
   { href: "/dashboard/leaderboard", icon: Trophy, label: "Ranks" },
   { href: "/dashboard/insights", icon: Brain, label: "AI" },
   { href: "/dashboard/progress", icon: BarChart2, label: "Progress" },

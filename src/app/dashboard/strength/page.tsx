@@ -28,8 +28,8 @@ type StrengthLog = {
 };
 
 const EXERCISE_OPTIONS: Record<Equipment, string[]> = {
-  dumbbell: ["Dumbbell Bench Press", "Dumbbell Row", "Dumbbell Shoulder Press", "Dumbbell Curl", "Goblet Squat", "Dumbbell Lunge"],
-  barbell: ["Barbell Squat", "Barbell Deadlift", "Barbell Bench Press", "Barbell Row", "Overhead Press", "Romanian Deadlift"],
+  dumbbell: ["Dumbbell Curl", "Dumbbell Bench Press", "Dumbbell Row", "Dumbbell Shoulder Press", "Goblet Squat", "Dumbbell Lunge"],
+  barbell: ["Barbell Deadlift", "Barbell Squat",  "Barbell Bench Press", "Barbell Row", "Overhead Press", "Romanian Deadlift"],
 };
 
 function getLocalDateTimeValue(date = new Date()): string {
@@ -48,9 +48,9 @@ export default function StrengthPage() {
   const [form, setForm] = useState({
     equipment: "dumbbell" as Equipment,
     exercise: EXERCISE_OPTIONS.dumbbell[0],
-    sets: "3",
+    sets: "1",
     reps: "10",
-    durationMinutes: "",
+    durationMinutes: "1",
     date: getLocalDateTimeValue(),
     notes: "",
   });
