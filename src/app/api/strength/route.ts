@@ -96,7 +96,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(log);
   } catch {
-    return NextResponse.json({ error: "Strength logging is temporarily unavailable" }, { status: 200 });
+    return NextResponse.json({ error: "Strength logging is temporarily unavailable" }, { status: 503 });
   }
 }
 

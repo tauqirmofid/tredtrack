@@ -7,6 +7,7 @@ export const dynamic = "force-dynamic";
 
 const WINDOW_DAYS = 42;
 const TARGET_LOSS_KG = 5;
+const MICRO_WINDOW_DAYS = 14;
 
 function round1(n: number) {
   return Math.round(n * 10) / 10;
@@ -22,21 +23,34 @@ export async function GET() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const prismaAny = prisma as any;
 
-  let user: { weightKg: number | null; name: string | null } | null = null;
-  let runs: Array<{ duration: number; calories: number | null; distance: number }> = [];
-  let strengthLogs: Array<{ durationMinutes: number | null; sets: number; calories: number | null; reps: number; volumeKg: number }> = [];
+  let user: { weightKg: number | null; name: string | null; dumbbellWeightKg?: number | null; barbellWeightKg?: number | null } | null = null;
+  let runs: Array<{ duration: number; calories: number | null; distance: number; date: Date }> = [];
+  let strengthLogs: Array<{
+    durationMinutes: number | null;
+    sets: number;
+    calories: number | null;
+    reps: number;
+    volumeKg: number;
+    equipment: "dumbbell" | "barbell";
+    exercise: string;
+    weightKg: number;
+    date: Date;
+  }> = [];
 
   try {
-    user = await prismaAny.user.findUnique({ where: { id: session.user.id }, select: { weightKg: true, name: true } });
+    user = await prismaAny.user.findUnique({
+      where: { id: session.user.id },
+      select: { weightKg: true, name: true, dumbbellWeightKg: true, barbellWeightKg: true },
+    });
   } catch {
-    user = { weightKg: null, name: null };
+    user = { weightKg: null, name: null, dumbbellWeightKg: null, barbellWeightKg: null };
   }
 
   try {
     runs = await prisma.run.findMany({
       where: { userId: session.user.id, date: { gte: since } },
       orderBy: { date: "desc" },
-      select: { duration: true, calories: true, distance: true },
+      select: { duration: true, calories: true, distance: true, date: true },
     });
   } catch {
     runs = [];
@@ -46,11 +60,26 @@ export async function GET() {
     strengthLogs = await prismaAny.strengthLog.findMany({
       where: { userId: session.user.id, date: { gte: since } },
       orderBy: { date: "desc" },
-      select: { durationMinutes: true, sets: true, calories: true, reps: true, volumeKg: true },
+      select: {
+        durationMinutes: true,
+        sets: true,
+        calories: true,
+        reps: true,
+        volumeKg: true,
+        equipment: true,
+        exercise: true,
+        weightKg: true,
+        date: true,
+      },
     });
   } catch {
     strengthLogs = [];
   }
+
+  const microSince = new Date();
+  microSince.setDate(microSince.getDate() - MICRO_WINDOW_DAYS);
+  const recentRuns = runs.filter((r) => new Date(r.date) >= microSince);
+  const recentStrength = strengthLogs.filter((s) => new Date(s.date) >= microSince);
 
   const currentWeightKg = user?.weightKg ?? null;
   const weeks = WINDOW_DAYS / 7;
@@ -104,6 +133,40 @@ export async function GET() {
     ? `At your current exercise pace, a ${TARGET_LOSS_KG}kg fat-loss target may take about ${Math.ceil(etaWeeks)} weeks (exercise-only estimate).`
     : `Current activity is too low to estimate reliable fat-loss pace yet. Build consistency for 2-3 weeks and re-check.`;
 
+  const recentRunAvgMinutes = recentRuns.length > 0
+    ? recentRuns.reduce((sum, r) => sum + r.duration, 0) / 60 / recentRuns.length
+    : 24;
+  const recentRunAvgDistance = recentRuns.length > 0
+    ? recentRuns.reduce((sum, r) => sum + r.distance, 0) / recentRuns.length
+    : 2.5;
+
+  const cardioMinutesTomorrow = Math.max(20, Math.min(45,
+    Math.round(
+      weeklyRunMinutes < 150
+        ? recentRunAvgMinutes + 6
+        : recentRunAvgMinutes
+    )
+  ));
+  const cardioDistanceTomorrow = Number((recentRunAvgDistance * (cardioMinutesTomorrow / Math.max(recentRunAvgMinutes, 1))).toFixed(1));
+
+  const latestStrength = recentStrength[0] ?? strengthLogs[0] ?? null;
+  const strengthEquipment: "dumbbell" | "barbell" = (latestStrength?.equipment as "dumbbell" | "barbell" | undefined)
+    ?? ((user?.dumbbellWeightKg ?? 0) > 0 ? "dumbbell" : "barbell");
+  const strengthWeight = latestStrength?.weightKg
+    ?? (strengthEquipment === "dumbbell" ? user?.dumbbellWeightKg : user?.barbellWeightKg)
+    ?? 0;
+  const strengthSets = latestStrength?.sets ?? 3;
+  const strengthReps = latestStrength?.reps ?? 10;
+  const strengthExercise = latestStrength?.exercise
+    ?? (strengthEquipment === "dumbbell" ? "Dumbbell Bench Press" : "Barbell Squat");
+  const strengthMinutesTomorrow = latestStrength?.durationMinutes
+    ?? Math.max(20, Math.round(strengthSets * 2.5 + 12));
+
+  const todayDay = new Date().toLocaleDateString("en-US", { weekday: "long" });
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowDay = tomorrow.toLocaleDateString("en-US", { weekday: "long" });
+
   return NextResponse.json({
     profile: {
       name: user?.name ?? "Athlete",
@@ -125,6 +188,29 @@ export async function GET() {
       weeklyStrengthSessions: targetStrengthSessions,
       suggestedExtraRunSessions: extraRunSessions,
       suggestedExtraStrengthSessions: extraStrengthSessions,
+    },
+    microPlan: {
+      today: todayDay,
+      tomorrow: tomorrowDay,
+      cardio: {
+        minutes: cardioMinutesTomorrow,
+        distanceKm: cardioDistanceTomorrow,
+        guidance: weeklyRunMinutes < 150
+          ? "Easy run or brisk incline walk"
+          : "Steady aerobic run",
+      },
+      strength: {
+        equipment: strengthEquipment,
+        exercise: strengthExercise,
+        sets: strengthSets,
+        reps: strengthReps,
+        weightKg: strengthWeight,
+        durationMinutes: strengthMinutesTomorrow,
+      },
+      recovery: {
+        hydrationLiters: Number(((currentWeightKg ?? 70) * 0.035).toFixed(1)),
+        sleepHours: "7.5-9",
+      },
     },
     summary,
     recommendations,

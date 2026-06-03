@@ -78,6 +78,6 @@ export async function PATCH(req: NextRequest) {
       weightKg: null,
       dumbbellWeightKg: null,
       barbellWeightKg: null,
-    }, { status: 200 });
+    }, { status: 503 });
   }
 }

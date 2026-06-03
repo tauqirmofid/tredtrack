@@ -27,6 +27,11 @@ type StrengthLog = {
   notes: string | null;
 };
 
+const EXERCISE_OPTIONS: Record<Equipment, string[]> = {
+  dumbbell: ["Dumbbell Bench Press", "Dumbbell Row", "Dumbbell Shoulder Press", "Dumbbell Curl", "Goblet Squat", "Dumbbell Lunge"],
+  barbell: ["Barbell Squat", "Barbell Deadlift", "Barbell Bench Press", "Barbell Row", "Overhead Press", "Romanian Deadlift"],
+};
+
 function getLocalDateTimeValue(date = new Date()): string {
   const tzOffsetMs = date.getTimezoneOffset() * 60_000;
   return new Date(date.getTime() - tzOffsetMs).toISOString().slice(0, 16);
@@ -37,12 +42,12 @@ export default function StrengthPage() {
   const [loading, setLoading] = useState(true);
   const [savingDefaults, setSavingDefaults] = useState(false);
   const [savingLog, setSavingLog] = useState(false);
+  const [status, setStatus] = useState<{ kind: "success" | "error"; text: string } | null>(null);
 
   const [defaults, setDefaults] = useState({ dumbbellWeightKg: "", barbellWeightKg: "" });
   const [form, setForm] = useState({
     equipment: "dumbbell" as Equipment,
-    exercise: "",
-    weightKg: "",
+    exercise: EXERCISE_OPTIONS.dumbbell[0],
     sets: "3",
     reps: "10",
     durationMinutes: "",
@@ -79,11 +84,6 @@ export default function StrengthPage() {
       barbellWeightKg: profileData.barbellWeightKg ? String(profileData.barbellWeightKg) : "",
     });
 
-    setForm((prev) => ({
-      ...prev,
-      weightKg: prev.weightKg || (profileData.dumbbellWeightKg ? String(profileData.dumbbellWeightKg) : ""),
-    }));
-
     setLogs(logsData);
     setLoading(false);
   }
@@ -94,14 +94,16 @@ export default function StrengthPage() {
 
   useEffect(() => {
     setForm((prev) => {
-      const suggested = prev.equipment === "dumbbell" ? defaults.dumbbellWeightKg : defaults.barbellWeightKg;
-      return { ...prev, weightKg: suggested || prev.weightKg };
+      const options = EXERCISE_OPTIONS[prev.equipment];
+      if (options.includes(prev.exercise)) return prev;
+      return { ...prev, exercise: options[0] };
     });
-  }, [form.equipment, defaults.dumbbellWeightKg, defaults.barbellWeightKg]);
+  }, [form.equipment]);
 
   async function saveDefaults() {
+    setStatus(null);
     setSavingDefaults(true);
-    await fetch("/api/profile", {
+    const res = await fetch("/api/profile", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -109,21 +111,34 @@ export default function StrengthPage() {
         barbellWeightKg: defaults.barbellWeightKg ? Number(defaults.barbellWeightKg) : null,
       }),
     });
+    if (!res.ok) {
+      const data = await safeJson<{ error?: string }>(res, {});
+      setStatus({ kind: "error", text: data.error ?? "Could not save defaults." });
+      setSavingDefaults(false);
+      return;
+    }
+    setStatus({ kind: "success", text: "Defaults saved." });
     await load();
     setSavingDefaults(false);
   }
 
   async function saveLog() {
-    if (!form.exercise.trim() || !form.weightKg || !form.sets || !form.reps) return;
+    setStatus(null);
+    const selectedWeight = form.equipment === "dumbbell" ? defaults.dumbbellWeightKg : defaults.barbellWeightKg;
+    if (!form.exercise.trim() || !form.sets || !form.reps) return;
+    if (!selectedWeight) {
+      setStatus({ kind: "error", text: `Set default ${form.equipment} weight first.` });
+      return;
+    }
 
     setSavingLog(true);
-    await fetch("/api/strength", {
+    const res = await fetch("/api/strength", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         equipment: form.equipment,
         exercise: form.exercise,
-        weightKg: Number(form.weightKg),
+        weightKg: Number(selectedWeight),
         sets: Number(form.sets),
         reps: Number(form.reps),
         durationMinutes: form.durationMinutes ? Number(form.durationMinutes) : null,
@@ -131,8 +146,16 @@ export default function StrengthPage() {
         notes: form.notes || null,
       }),
     });
+    if (!res.ok) {
+      const data = await safeJson<{ error?: string }>(res, {});
+      setStatus({ kind: "error", text: data.error ?? "Could not save workout." });
+      setSavingLog(false);
+      return;
+    }
+    setStatus({ kind: "success", text: "Workout logged." });
     await load();
     setForm((prev) => ({ ...prev, exercise: "", notes: "", date: getLocalDateTimeValue() }));
+    setForm((prev) => ({ ...prev, exercise: EXERCISE_OPTIONS[prev.equipment][0] }));
     setSavingLog(false);
   }
 
@@ -172,6 +195,9 @@ export default function StrengthPage() {
         <button className="btn-secondary mt-3 flex items-center justify-center gap-2" onClick={saveDefaults} disabled={savingDefaults}>
           {savingDefaults ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Save Defaults
         </button>
+        {status && (
+          <p className="text-xs mt-2" style={{ color: status.kind === "error" ? "#ff453a" : "#30d158" }}>{status.text}</p>
+        )}
       </div>
 
       <div className="card p-4 mb-4">
@@ -185,11 +211,16 @@ export default function StrengthPage() {
         </div>
 
         <div className="space-y-3">
-          <input className="input-field" placeholder="Exercise name (e.g. Bench Press)" value={form.exercise}
-            onChange={(e) => setForm((p) => ({ ...p, exercise: e.target.value }))} />
-          <div className="grid grid-cols-3 gap-2">
-            <input className="input-field" type="number" min={0} step="0.5" placeholder="Weight kg" value={form.weightKg}
-              onChange={(e) => setForm((p) => ({ ...p, weightKg: e.target.value }))} />
+          <select className="input-field" value={form.exercise}
+            onChange={(e) => setForm((p) => ({ ...p, exercise: e.target.value }))}>
+            {EXERCISE_OPTIONS[form.equipment].map((exercise) => (
+              <option key={exercise} value={exercise}>{exercise}</option>
+            ))}
+          </select>
+          <p className="text-xs" style={{ color: "#8e8e93" }}>
+            Logged weight: <span style={{ color: "#f5f5f7" }}>{(form.equipment === "dumbbell" ? defaults.dumbbellWeightKg : defaults.barbellWeightKg) || "Not set"} kg</span>
+          </p>
+          <div className="grid grid-cols-2 gap-2">
             <input className="input-field" type="number" min={1} placeholder="Sets" value={form.sets}
               onChange={(e) => setForm((p) => ({ ...p, sets: e.target.value }))} />
             <input className="input-field" type="number" min={1} placeholder="Reps" value={form.reps}
@@ -203,7 +234,7 @@ export default function StrengthPage() {
           </div>
           <input className="input-field" placeholder="Notes (optional)" value={form.notes}
             onChange={(e) => setForm((p) => ({ ...p, notes: e.target.value }))} />
-          <button className="btn-primary" onClick={saveLog} disabled={savingLog || !form.weightKg || !form.exercise}>
+          <button className="btn-primary" onClick={saveLog} disabled={savingLog || !form.exercise}>
             {savingLog ? "Saving…" : "Save Workout"}
           </button>
         </div>

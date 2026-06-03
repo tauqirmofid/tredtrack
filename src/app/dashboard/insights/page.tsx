@@ -22,6 +22,27 @@ type InsightResponse = {
     suggestedExtraRunSessions: number;
     suggestedExtraStrengthSessions: number;
   };
+  microPlan?: {
+    today: string;
+    tomorrow: string;
+    cardio: {
+      minutes: number;
+      distanceKm: number;
+      guidance: string;
+    };
+    strength: {
+      equipment: "dumbbell" | "barbell";
+      exercise: string;
+      sets: number;
+      reps: number;
+      weightKg: number;
+      durationMinutes: number;
+    };
+    recovery: {
+      hydrationLiters: number;
+      sleepHours: string;
+    };
+  };
   summary: string;
   recommendations: string[];
 };
@@ -31,6 +52,7 @@ export default function InsightsPage() {
   const [saving, setSaving] = useState(false);
   const [weightKg, setWeightKg] = useState("");
   const [insight, setInsight] = useState<InsightResponse | null>(null);
+  const [status, setStatus] = useState<{ kind: "success" | "error"; text: string } | null>(null);
 
   async function safeJson<T>(res: Response, fallback: T): Promise<T> {
     if (!res.ok) return fallback;
@@ -68,6 +90,13 @@ export default function InsightsPage() {
           suggestedExtraRunSessions: 3,
           suggestedExtraStrengthSessions: 2,
         },
+        microPlan: {
+          today: "Today",
+          tomorrow: "Tomorrow",
+          cardio: { minutes: 25, distanceKm: 2.5, guidance: "Easy run or brisk walk" },
+          strength: { equipment: "dumbbell", exercise: "Dumbbell Bench Press", sets: 3, reps: 10, weightKg: 0, durationMinutes: 20 },
+          recovery: { hydrationLiters: 2.4, sleepHours: "7.5-9" },
+        },
         summary: "Unable to load insights right now. Try again shortly.",
         recommendations: ["Keep training consistently while insights sync."],
       });
@@ -86,12 +115,20 @@ export default function InsightsPage() {
 
   async function saveWeight() {
     if (!weightKg) return;
+    setStatus(null);
     setSaving(true);
-    await fetch("/api/profile", {
+    const res = await fetch("/api/profile", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ weightKg: Number(weightKg) }),
     });
+    if (!res.ok) {
+      const data = await safeJson<{ error?: string }>(res, {});
+      setStatus({ kind: "error", text: data.error ?? "Could not save weight." });
+      setSaving(false);
+      return;
+    }
+    setStatus({ kind: "success", text: "Weight saved." });
     await load();
     setSaving(false);
   }
@@ -118,6 +155,9 @@ export default function InsightsPage() {
             {saving ? "..." : "Save"}
           </button>
         </div>
+        {status && (
+          <p className="text-xs mt-2" style={{ color: status.kind === "error" ? "#ff453a" : "#30d158" }}>{status.text}</p>
+        )}
       </div>
 
       <div className="card p-5 mb-4" style={{ background: "linear-gradient(135deg, #142a1f, #101924)", border: "1px solid rgba(48,209,88,0.25)" }}>
@@ -147,6 +187,17 @@ export default function InsightsPage() {
           ))}
         </ul>
       </div>
+
+      {insight.microPlan && (
+        <div className="card p-4 mb-4" style={{ background: "rgba(48,209,88,0.06)", border: "1px solid rgba(48,209,88,0.2)" }}>
+          <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "#8e8e93" }}>Tomorrow Micro Plan ({insight.microPlan.tomorrow})</p>
+          <ul className="space-y-1 text-sm" style={{ color: "#f5f5f7" }}>
+            <li>• Cardio: {insight.microPlan.cardio.minutes} min ({insight.microPlan.cardio.distanceKm} km target) — {insight.microPlan.cardio.guidance}</li>
+            <li>• Strength: {insight.microPlan.strength.exercise} ({insight.microPlan.strength.equipment}) — {insight.microPlan.strength.sets}×{insight.microPlan.strength.reps} @ {insight.microPlan.strength.weightKg || "set default"} kg (~{insight.microPlan.strength.durationMinutes} min)</li>
+            <li>• Recovery: {insight.microPlan.recovery.hydrationLiters}L water, {insight.microPlan.recovery.sleepHours} hours sleep</li>
+          </ul>
+        </div>
+      )}
 
       <div className="card p-4" style={{ background: "rgba(10,132,255,0.08)", border: "1px solid rgba(10,132,255,0.25)" }}>
         <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "#8e8e93" }}>Weekly Targets from AI</p>
