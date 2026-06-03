@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+export const dynamic = "force-dynamic";
 
 type RunEntry = { distance: number; duration: number; avgSpeed: number; date: Date };
 type LeaderboardEntry = {

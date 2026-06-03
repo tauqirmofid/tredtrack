@@ -3,6 +3,8 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { calcCalories } from "@/lib/utils";
 
+export const dynamic = "force-dynamic";
+
 const WINDOW_DAYS = 42;
 const TARGET_LOSS_KG = 5;
 
