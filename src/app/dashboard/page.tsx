@@ -2,7 +2,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import { formatDuration, formatDistance } from "@/lib/utils";
-import { Camera, Pencil, Flame, Zap, Route, Clock } from "lucide-react";
+import { Camera, Pencil, Flame, Zap, Route, Clock, Dumbbell, Brain } from "lucide-react";
 import { format } from "date-fns";
 import { headers } from "next/headers";
 
@@ -163,6 +163,26 @@ export default async function DashboardPage() {
           <div>
             <p className="font-semibold text-sm" style={{ color: "#f5f5f7" }}>Manual Entry</p>
             <p className="text-xs mt-0.5" style={{ color: "#8e8e93" }}>Enter time & distance</p>
+          </div>
+        </Link>
+        <Link href="/dashboard/strength" className="card p-4 flex flex-col gap-3 active:scale-95 transition-transform">
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center"
+            style={{ background: "linear-gradient(135deg, #ff9f0a, #e57f00)" }}>
+            <Dumbbell size={20} color="white" />
+          </div>
+          <div>
+            <p className="font-semibold text-sm" style={{ color: "#f5f5f7" }}>Strength Log</p>
+            <p className="text-xs mt-0.5" style={{ color: "#8e8e93" }}>Dumbbell & barbell</p>
+          </div>
+        </Link>
+        <Link href="/dashboard/insights" className="card p-4 flex flex-col gap-3 active:scale-95 transition-transform">
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center"
+            style={{ background: "linear-gradient(135deg, #bf5af2, #8f3bd8)" }}>
+            <Brain size={20} color="white" />
+          </div>
+          <div>
+            <p className="font-semibold text-sm" style={{ color: "#f5f5f7" }}>AI Insights</p>
+            <p className="text-xs mt-0.5" style={{ color: "#8e8e93" }}>Smart fat-loss plan</p>
           </div>
         </Link>
       </div>

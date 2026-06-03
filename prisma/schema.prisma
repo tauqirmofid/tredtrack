@@ -12,6 +12,9 @@ model User {
   username  String   @unique
   password  String
   avatar    String?
+  weightKg  Float?
+  dumbbellWeightKg Float?
+  barbellWeightKg  Float?
   city      String?
   country   String?
   latitude  Float?
@@ -19,6 +22,7 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   runs      Run[]
+  strengthLogs StrengthLog[]
 }
 
 model Run {
@@ -35,4 +39,23 @@ model Run {
   source    String   @default("manual")
   notes     String?
   createdAt DateTime @default(now())
+}
+
+model StrengthLog {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date            DateTime @default(now())
+  equipment       String
+  exercise        String
+  weightKg        Float
+  sets            Int
+  reps            Int
+  durationMinutes Int?
+  volumeKg        Float
+  calories        Float?
+  notes           String?
+  createdAt       DateTime @default(now())
+
+  @@index([userId, date])
 }
